@@ -24,6 +24,23 @@ export function gridPoint({ x, y }) {
 
 export const isDiagramShape = item => item.kind !== 'flow' && item.kind !== 'text';
 
+export function marqueeBox(start, end) {
+  return {
+    x: Math.min(start.x, end.x), y: Math.min(start.y, end.y),
+    width: Math.abs(end.x - start.x), height: Math.abs(end.y - start.y),
+  };
+}
+
+export function itemsInMarquee(box, bounds, base) {
+  const selected = new Set(base);
+  for (const [id, item] of bounds) {
+    if (item.x >= box.x && item.y >= box.y &&
+      item.x + item.width <= box.x + box.width &&
+      item.y + item.height <= box.y + box.height) selected.add(id);
+  }
+  return selected;
+}
+
 function withPositions(items, axis, shapes, centers) {
   const changes = new Map();
   shapes.forEach((item, index) => {

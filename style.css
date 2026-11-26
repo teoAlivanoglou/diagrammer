@@ -112,6 +112,7 @@ kbd { font: 11px ui-monospace, monospace; display: inline-grid; place-items: cen
 #canvas [data-handle] { cursor: grab; }
 #canvas [data-handle]:active { cursor: grabbing; }
 #canvas .snap-target > [stroke] { stroke: #087c61; }
+#canvas .marquee { fill: #7057e526; stroke: #7057e5; }
 .empty { position: absolute; top: 48%; left: 50%; transform: translate(-50%, -50%); display: grid; justify-items: center; gap: 8px; color: var(--muted); text-align: center; width: min(340px, 90%); pointer-events: none; font-size: 14px; }
 .empty > span:first-child { background: #ede9ff; color: var(--accent); border-radius: 12px; padding: 11px; margin-bottom: 4px; }
 .empty svg { width: 24px; height: 24px; }

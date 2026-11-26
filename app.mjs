@@ -1,6 +1,6 @@
 import {
   TYPES, FONTS, GRID_SIZE, sampleDiagram, arrowGeometry, snapEndpoint, withCurve, removeItems,
-  alignShapes, distributeShapes, gridPoint, isDiagramShape,
+  alignShapes, distributeShapes, gridPoint, isDiagramShape, itemsInMarquee, marqueeBox,
 } from './diagram.mjs';
 import { icon } from './icons.mjs';
 import { svg, drawItem, drawItems, imageBounds, renderPng } from './drawing.mjs';
@@ -151,7 +151,7 @@ function paint() {
 
 function paintTip() {
   const item = onlySelected();
-  let tip = 'Drag to move · Double-click to edit a label';
+  let tip = 'Drag empty canvas to select multiple elements';
   if (activeTool === 'flow') tip = pending ? 'Click where the arrow should end.' : 'Click where the arrow should start.';
   else if (activeTool !== 'select') tip = 'Click the canvas to place ' + tools[activeTool].name.toLowerCase() + '.';
   else if (item?.kind === 'flow') tip = item.control
@@ -197,7 +197,11 @@ function paintCanvas() {
   drawItems(drawing, state, state.items, selected, true, zoom);
   overlays.replaceChildren();
   const item = onlySelected();
-  if (activeTool === 'select' && item?.kind === 'flow') {
+  if (drag?.type === 'marquee' && drag.box) {
+    overlays.append(svg('rect', {
+      ...drag.box, class: 'marquee', 'stroke-width': 1 / zoom, 'pointer-events': 'none',
+    }));
+  } else if (activeTool === 'select' && item?.kind === 'flow') {
     if (drag?.moved && drag.type === 'handle' && drag.handle !== 'control') {
       const target = item[drag.handle].node;
       if (target) drawing.querySelector('[data-item="' + CSS.escape(target) + '"]')?.classList.add('snap-target');
@@ -363,8 +367,8 @@ canvas.addEventListener('pointerdown', event => {
   }
   if (!item) {
     lastClick = null;
-    if (!event.shiftKey) selected = new Set();
-    paint();
+    const bounds = new Map([...drawing.children].map(element => [element.dataset.item, element.getBBox()]));
+    beginDrag(event, 'marquee', { start: point, bounds, previousSelection: selected, extend: event.shiftKey });
     return;
   }
   if (event.shiftKey) {
@@ -411,6 +415,12 @@ canvas.addEventListener('pointermove', event => {
     setViewport();
     return;
   }
+  if (drag.type === 'marquee') {
+    drag.box = marqueeBox(drag.start, point);
+    selected = itemsInMarquee(drag.box, drag.bounds, drag.extend ? drag.previousSelection : []);
+    paint();
+    return;
+  }
   let offsetX = dx / zoom;
   let offsetY = dy / zoom;
   if (drag.anchor && $('snap-to-grid').checked) {
@@ -450,10 +460,14 @@ canvas.addEventListener('pointermove', event => {
 
 function finishDrag(event, canceled = false) {
   if (!drag || drag.pointerId !== event.pointerId) return;
-  const { moved, snapshot, type, handle, id } = drag;
+  const { moved, snapshot, type, handle, id, previousSelection, extend, start, bounds } = drag;
   drag = null;
   if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
-  if (moved && type !== 'pan') {
+  if (type === 'marquee') {
+    if (canceled) selected = previousSelection;
+    else if (moved) selected = itemsInMarquee(marqueeBox(start, location(event)), bounds, extend ? previousSelection : []);
+    else if (!extend) selected = new Set();
+  } else if (moved && type !== 'pan') {
     if (canceled) state = snapshot;
     else {
       if (type === 'handle' && handle !== 'control') {

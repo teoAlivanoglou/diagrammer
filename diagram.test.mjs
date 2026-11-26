@@ -1,12 +1,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { alignShapes, arrowGeometry, distributeShapes, flowLabelPlacement, gridPoint, removeItems, sampleDiagram, snapEndpoint, withCurve } from './diagram.mjs';
+import { alignShapes, arrowGeometry, distributeShapes, flowLabelPlacement, gridPoint, itemsInMarquee, marqueeBox, removeItems, sampleDiagram, snapEndpoint, withCurve } from './diagram.mjs';
 import { centerLabelLines, wrapLabel } from './drawing.mjs';
 import { renderWord } from './word.mjs';
 
 const left = { id: 'a', kind: 'entity', x: 0, y: 0, w: 100, h: 50 };
 const right = { id: 'b', kind: 'process', x: 200, y: 0, w: 100, h: 100 };
 const flow = { id: 'flow', kind: 'flow', from: { node: 'a' }, to: { node: 'b' } };
+
+test('marquee selects enclosed items in any drag direction and can extend a selection', () => {
+  const box = marqueeBox({ x: 90, y: 70 }, { x: 15, y: 20 });
+  assert.deepEqual(box, { x: 15, y: 20, width: 75, height: 50 });
+  const bounds = new Map([
+    ['inside', { x: 25, y: 30, width: 65, height: 10 }],
+    ['partial', { x: 5, y: 30, width: 30, height: 10 }],
+  ]);
+  assert.deepEqual(itemsInMarquee(box, bounds, new Set(['existing'])), new Set(['existing', 'inside']));
+});
 
 test('snap rounds to visible grid intersections around the canvas origin', () => {
   assert.deepEqual(gridPoint({ x: -34, y: 12 }), { x: -44, y: 22 });
