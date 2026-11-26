@@ -29,7 +29,18 @@
         <h3>Annotation</h3>
         <div id="text-tool"></div>
       </div>
-      <button id="new" class="button new-button" data-icon-prefix="plus">New diagram</button>
+      <div class="file-actions">
+        <details id="files">
+          <summary class="button" data-icon-prefix="file">Files</summary>
+          <div>
+            <button id="save-json" class="button">Download diagram JSON</button>
+            <button id="open-json" class="button">Open diagram JSON</button>
+            <button id="save-selection" class="button">Download selection JSON</button>
+            <button id="insert-json" class="button">Import and place JSON</button>
+          </div>
+        </details>
+        <button id="new" class="button new-button" data-icon-prefix="plus">New diagram</button>
+      </div>
     </aside>
 
     <section class="editor" aria-label="Diagram editor">
@@ -114,5 +125,6 @@
       <div class="inspector-footer"><span data-icon="info"></span><p>Use Word for editable shapes and labels. Copy puts a transparent image on the clipboard.</p></div>
     </aside>
   </main>
+  <input id="json-file" type="file" accept=".json,application/json" hidden>
 </body>
 </html>

@@ -83,7 +83,10 @@ h3 { color: #657087; font-size: 12px; font-weight: 740; text-transform: uppercas
 kbd { font: 11px ui-monospace, monospace; display: inline-grid; place-items: center; border: 1px solid #e1e6ef; border-radius: 4px; color: #5f6c85; background: #f9fafd; padding: 1px 4px; min-width: 19px; min-height: 19px; white-space: nowrap; }
 .tool kbd { margin-left: auto; }
 .tool.active kbd { border-color: #d8ccff; background: #f6f2ff; color: #563fc8; }
-.new-button { margin: auto 12px 14px; }
+.file-actions { margin: auto 12px 14px; display: grid; gap: 8px; }
+#files summary { width: 100%; cursor: pointer; }
+#files > div { display: grid; gap: 4px; margin-top: 5px; }
+#files button { justify-content: start; text-align: start; min-height: 32px; padding: 4px 7px; font-size: 12px; }
 
 .editor { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .editor-bar, .status-bar { background: #fff; display: flex; align-items: center; justify-content: space-between; min-width: 0; }
@@ -171,7 +174,10 @@ textarea { display: block; min-height: 69px; resize: vertical; }
   .tools .side-heading h2, .tool-body h3, .tool span, .tool kbd { display: none; }
   .tool { padding: 0; justify-content: center; }
   .tool-body { display: grid; gap: 13px; }
-  .new-button { font-size: 0; gap: 0; padding: 0; margin-inline: 8px; }
+  .file-actions { margin-inline: 6px; }
+  .new-button { font-size: 0; gap: 0; padding: 0; }
+  #files summary { font-size: 0; gap: 0; padding: 0; }
+  #files[open] > div { position: fixed; left: 48px; bottom: 58px; z-index: 4; padding: 6px; background: #fff; border: 1px solid var(--border); border-radius: 7px; }
   .workspace .inspector-footer { margin-inline: 9px; }
 }
 

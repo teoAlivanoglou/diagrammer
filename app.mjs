@@ -5,6 +5,7 @@ import {
 import { icon } from './icons.mjs';
 import { svg, drawItem, drawItems, imageBounds, renderPng } from './drawing.mjs';
 import { renderWord } from './word.mjs';
+import { decodeFile, diagramFile, instantiateItems, MAX_FILE_BYTES, selectionFile } from './diagram-file.mjs';
 
 const $ = id => document.getElementById(id);
 const canvas = $('canvas');
@@ -19,6 +20,7 @@ let state = load();
 let selected = new Set();
 let activeTool = 'select';
 let pending = null;
+let pendingInsert = null;
 let drag = null;
 let lastClick = null;
 let past = [];
@@ -102,6 +104,7 @@ function history(source, destination) {
   selected = new Set([...selected].filter(itemById));
   editingField = null;
   pending = null;
+  pendingInsert = null;
   save();
   paint();
 }
@@ -109,6 +112,7 @@ function history(source, destination) {
 function setTool(kind) {
   activeTool = kind;
   pending = null;
+  pendingInsert = null;
   editingField = null;
   paint();
 }
@@ -130,11 +134,12 @@ function paint() {
     flows + (flows === 1 ? ' flow' : ' flows');
   $('empty').hidden = state.items.length > 0 || activeTool !== 'select';
   $('copy').disabled = $('download').disabled = $('word').disabled = !exportItems().length;
+  $('save-selection').disabled = !selected.size;
   $('copy').querySelector('span').textContent = selected.size ? 'Copy selection' : 'Copy diagram';
   $('undo').disabled = past.length === 0;
   $('redo').disabled = future.length === 0;
   $('fit').disabled = state.items.length === 0;
-  surface.classList.toggle('placing', activeTool !== 'select');
+  surface.classList.toggle('placing', activeTool !== 'select' || Boolean(pendingInsert));
   for (const button of document.querySelectorAll('[data-tool]')) {
     const active = button.dataset.tool === activeTool;
     button.classList.toggle('active', active);
@@ -154,7 +159,8 @@ function paintTip() {
     : 'Drag the label to move it or a round handle to reconnect.';
   else if (!state.items.length) tip = 'Pick a tool to begin.';
   else if (item && isDiagramShape(item)) tip = 'Shift-click to select more shapes · Double-click to edit a label';
-  if (activeTool !== 'select') tip += ' <kbd>Esc</kbd> to cancel';
+  if (pendingInsert) tip = 'Click the canvas to place the imported elements.';
+  if (activeTool !== 'select' || pendingInsert) tip += ' <kbd>Esc</kbd> to cancel';
   $('tip').innerHTML = tip;
 }
 
@@ -294,6 +300,14 @@ function appendItem(kind, props) {
   if (kind === 'text') focusLabel();
 }
 
+function insertItems(items, offset) {
+  const copies = instantiateItems(items, offset);
+  selected = new Set(copies.map(item => item.id));
+  pendingInsert = null;
+  activeTool = 'select';
+  update({ ...state, items: [...state.items, ...copies] });
+}
+
 function focusLabel() {
   $('label').focus();
   $('label').select();
@@ -316,6 +330,12 @@ canvas.addEventListener('pointerdown', event => {
   if (spaceDown || event.button === 1 || event.altKey) {
     lastClick = null;
     beginDrag(event, 'pan');
+    return;
+  }
+  if (pendingInsert) {
+    const target = $('snap-to-grid').checked ? gridPoint(point) : point;
+    const { items, anchor } = pendingInsert;
+    insertItems(items, { x: target.x - anchor.x, y: target.y - anchor.y });
     return;
   }
   const item = itemById(event.target.closest('[data-item]')?.dataset.item);
@@ -480,6 +500,7 @@ $('new').addEventListener('click', () => {
   selected = new Set();
   activeTool = 'select';
   pending = null;
+  pendingInsert = null;
   center = { x: 0, y: 0 };
   zoom = 1;
   followFit = true;
@@ -549,6 +570,63 @@ function exportItems() {
     (item.kind !== 'text' || item.label.trim()));
 }
 
+function downloadFile(blob, extension, suffix = '') {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  const name = state.title.trim().replace(/[^\p{L}\p{N}-]+/gu, '-').replace(/^-|-$/g, '') || 'diagram';
+  link.download = name + suffix + '.' + extension;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function downloadJson(selection) {
+  if (selection && !selected.size) return;
+  const file = selection ? selectionFile(state, selected) : diagramFile(state);
+  downloadFile(new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' }), 'json', selection ? '-selection' : '');
+  $('files').open = false;
+}
+
+function chooseJson(mode) {
+  const input = $('json-file');
+  input.dataset.mode = mode;
+  input.value = '';
+  $('files').open = false;
+  input.click();
+}
+
+$('save-json').addEventListener('click', () => downloadJson(false));
+$('save-selection').addEventListener('click', () => downloadJson(true));
+$('open-json').addEventListener('click', () => chooseJson('open'));
+$('insert-json').addEventListener('click', () => chooseJson('insert'));
+$('json-file').addEventListener('change', async event => {
+  const input = event.target;
+  const file = input.files[0];
+  const mode = input.dataset.mode;
+  if (!file) return;
+  try {
+    if (file.size > MAX_FILE_BYTES) throw new Error('The diagram file is too large.');
+    const decoded = decodeFile(await file.text());
+    if (mode === 'open') {
+      if (decoded.type !== 'diagram') throw new Error('Use Import and place for a shape set.');
+      selected = new Set();
+      setTool('select');
+      update(decoded.diagram);
+      fitDiagram();
+    } else {
+      const items = decoded.diagram?.items ?? decoded.items;
+      if (!items.length) throw new Error('The file has no elements to place.');
+      const bounds = imageBounds({ ...state, items }, items);
+      setTool('select');
+      pendingInsert = { items, anchor: { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 } };
+      paint();
+    }
+    canvas.focus({ preventScroll: true });
+  } catch (error) {
+    toast(error.message);
+  }
+});
+
 async function copyImage() {
   const items = exportItems();
   if (!items.length) {
@@ -575,13 +653,7 @@ async function downloadDiagram(format) {
   const word = format === 'docx';
   try {
     const blob = word ? await renderWord(state, items) : await renderPng(state, items);
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    const name = state.title.trim().replace(/[^\p{L}\p{N}-]+/gu, '-').replace(/^-|-$/g, '') || 'diagram';
-    link.download = name + '.' + format;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    downloadFile(blob, format);
     toast(word ? 'Editable Word document downloaded.' : 'PNG downloaded.', true);
   } catch {
     toast(word ? 'Could not create the Word document.' : 'Could not create the PNG.');
