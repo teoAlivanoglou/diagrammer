@@ -17,6 +17,13 @@ export const midpoint = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
 
 export const GRID_SIZE = 22;
 
+export function shortcutKey({ key, code }) {
+  if (/^\p{Letter}$/u.test(key) && !/^[a-z]$/i.test(key) && /^Key[A-Z]$/.test(code)) {
+    return code.slice(3).toLowerCase();
+  }
+  return key.toLowerCase();
+}
+
 export function gridPoint({ x, y }) {
   const snap = value => Math.round(value / GRID_SIZE) * GRID_SIZE || 0;
   return { x: snap(x), y: snap(y) };

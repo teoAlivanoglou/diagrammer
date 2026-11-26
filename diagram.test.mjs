@@ -1,12 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { alignShapes, arrowGeometry, distributeShapes, flowLabelPlacement, gridPoint, itemsInMarquee, marqueeBox, removeItems, sampleDiagram, snapEndpoint, withCurve } from './diagram.mjs';
+import { alignShapes, arrowGeometry, distributeShapes, flowLabelPlacement, gridPoint, itemsInMarquee, marqueeBox, removeItems, sampleDiagram, shortcutKey, snapEndpoint, withCurve } from './diagram.mjs';
 import { centerLabelLines, wrapLabel } from './drawing.mjs';
 import { renderWord } from './word.mjs';
 
 const left = { id: 'a', kind: 'entity', x: 0, y: 0, w: 100, h: 50 };
 const right = { id: 'b', kind: 'process', x: 200, y: 0, w: 100, h: 100 };
 const flow = { id: 'flow', kind: 'flow', from: { node: 'a' }, to: { node: 'b' } };
+
+test('editor shortcuts respect Latin keys and fall back to physical keys for Greek', () => {
+  assert.equal(shortcutKey({ key: 'A', code: 'KeyQ' }), 'a');
+  assert.equal(shortcutKey({ key: 'π', code: 'KeyP' }), 'p');
+  assert.equal(shortcutKey({ key: 'ζ', code: 'KeyZ' }), 'z');
+  assert.equal(shortcutKey({ key: 'Unidentified', code: 'KeyP' }), 'unidentified');
+});
 
 test('marquee selects enclosed items in any drag direction and can extend a selection', () => {
   const box = marqueeBox({ x: 90, y: 70 }, { x: 15, y: 20 });

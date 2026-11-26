@@ -1,6 +1,6 @@
 import {
   TYPES, FONTS, GRID_SIZE, sampleDiagram, arrowGeometry, snapEndpoint, withCurve, removeItems,
-  alignShapes, distributeShapes, gridPoint, isDiagramShape, itemsInMarquee, marqueeBox,
+  alignShapes, distributeShapes, gridPoint, isDiagramShape, itemsInMarquee, marqueeBox, shortcutKey,
 } from './diagram.mjs';
 import { icon } from './icons.mjs';
 import { svg, drawItem, drawItems, imageBounds, renderPng } from './drawing.mjs';
@@ -65,7 +65,10 @@ for (const [kind, details] of Object.entries(tools)) {
   button.title = details.name + ' (' + details.shortcut + ')';
   button.setAttribute('aria-label', details.name);
   button.innerHTML = icon(kind) + '<span>' + details.name + '</span><kbd>' + details.shortcut + '</kbd>';
-  button.addEventListener('click', () => setTool(kind));
+  button.addEventListener('click', () => {
+    setTool(kind);
+    canvas.focus({ preventScroll: true });
+  });
   $(kind === 'select' ? 'select-tool' : kind === 'text' ? 'text-tool' : 'shape-tools').append(button);
 }
 for (const font of Object.keys(FONTS)) $('font').add(new Option(font));
@@ -548,6 +551,7 @@ $('align').addEventListener('change', event => {
   const items = alignShapes(state.items, selected, axis, anchor);
   event.target.selectedIndex = 0;
   if (items !== state.items) update({ ...state, items });
+  canvas.focus({ preventScroll: true });
 });
 for (const button of document.querySelectorAll('[data-space]')) {
   button.addEventListener('click', () => {
@@ -559,7 +563,10 @@ $('straight').addEventListener('click', () => updateItem(onlySelected(), item =>
 $('curve').addEventListener('click', () => updateItem(onlySelected(), item => withCurve(item, true, state.items)));
 $('reverse').addEventListener('click', () => updateItem(onlySelected(), item => ({ ...item, from: item.to, to: item.from })));
 $('reset-label').addEventListener('click', () => updateItem(onlySelected(), { labelOffset: null }));
-$('font').addEventListener('change', event => updateItem(onlySelected(), { font: event.target.value }));
+$('font').addEventListener('change', event => {
+  updateItem(onlySelected(), { font: event.target.value });
+  canvas.focus({ preventScroll: true });
+});
 
 for (const [id, prop] of [['title', 'title'], ['thickness', 'stroke'], ['label', 'label']]) {
   $(id).addEventListener('input', event => {
@@ -739,16 +746,21 @@ document.addEventListener('paste', event => {
 });
 
 document.addEventListener('keydown', event => {
-  if (event.isComposing) return;
+  if (event.defaultPrevented || event.isComposing) return;
+  const textEditor = isTextEditor(event.target);
   if (event.key === 'Escape') {
+    if (event.target.closest('select')) return;
+    event.preventDefault();
     if (drag) finishDrag({ pointerId: drag.pointerId }, true);
-    selected = new Set();
-    setTool('select');
-    canvas.focus();
+    else if (!textEditor) {
+      if (!pending && !pendingInsert && activeTool === 'select') selected = new Set();
+      setTool('select');
+    }
+    canvas.focus({ preventScroll: true });
     return;
   }
-  if (event.target.closest('input, textarea, select, [contenteditable]')) return;
-  const key = event.key.toLowerCase();
+  if (textEditor || event.target.closest('select') || event.altKey) return;
+  const key = shortcutKey(event);
   const modifier = event.metaKey || event.ctrlKey;
   if (modifier && (key === 'z' || key === 'y')) {
     event.preventDefault();
@@ -758,19 +770,23 @@ document.addEventListener('keydown', event => {
     event.preventDefault();
     selected = new Set(state.items.map(item => item.id));
     setTool('select');
-  } else if (!modifier && !event.altKey) {
+  } else if (!modifier) {
     if (key === 'delete' || key === 'backspace') {
       event.preventDefault();
       deleteSelected();
     } else if (key === 'enter' && onlySelected() && document.activeElement === canvas) {
       event.preventDefault();
       focusLabel();
-    } else if (key === ' ' && document.activeElement === canvas) {
+    } else if (event.code === 'Space' && document.activeElement === canvas) {
       event.preventDefault();
       spaceDown = true;
     } else {
       const tool = Object.keys(tools).find(kind => tools[kind].shortcut.toLowerCase() === key);
-      if (tool) setTool(tool);
+      if (tool) {
+        event.preventDefault();
+        if (!event.repeat) setTool(tool);
+        canvas.focus({ preventScroll: true });
+      }
     }
   }
 });
