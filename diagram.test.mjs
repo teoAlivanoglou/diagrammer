@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { alignShapes, arrowGeometry, distributeShapes, gridPoint, removeItems, sampleDiagram, snapEndpoint, withCurve } from './diagram.mjs';
+import { alignShapes, arrowGeometry, distributeShapes, flowLabelPlacement, gridPoint, removeItems, sampleDiagram, snapEndpoint, withCurve } from './diagram.mjs';
 import { centerLabelLines, wrapLabel } from './drawing.mjs';
 import { renderWord } from './word.mjs';
 
@@ -53,6 +53,33 @@ test('curves use one control point, and straightening removes it', () => {
   assert.match(g.path, /^M .+ Q /);
   assert.ok(g.center.y < 0);
   assert.equal(withCurve(curved, false, items).control, null);
+});
+
+test('curved labels keep their full ink box beyond the outside tangent', () => {
+  const item = {
+    from: { x: 0, y: 0 }, to: { x: 150, y: 100 },
+    control: { x: 100, y: -90 }, label: 'Curved label', size: 16,
+  };
+  const stroke = 4;
+  const box = { width: 140, height: 48 };
+  const geometry = arrowGeometry(item, [], stroke);
+  const label = flowLabelPlacement(item, geometry, stroke, box);
+  const length = Math.hypot(100, 150);
+  const normal = { x: 100 / length, y: -150 / length };
+  const support = normal.x * box.width / 2 - normal.y * box.height / 2;
+  const clearance = (label.x - geometry.center.x) * normal.x +
+    (label.y - geometry.center.y) * normal.y - support;
+  assert.ok(clearance >= 8 - 1e-7);
+});
+
+test('moving a label applies an offset from its automatic position', () => {
+  const item = { ...flow, control: { x: 120, y: 110 }, label: 'Test', size: 14 };
+  const geometry = arrowGeometry(item, [left, right], 2);
+  const box = { width: 45, height: 15 };
+  const automatic = flowLabelPlacement(item, geometry, 2, box);
+  const adjusted = flowLabelPlacement({ ...item, labelOffset: { x: 30, y: -9 } }, geometry, 2, box);
+  assert.equal(adjusted.x, automatic.x + 30);
+  assert.equal(adjusted.y, automatic.y - 9);
 });
 
 test('deleting a node removes its attached flows but preserves unrelated shapes', () => {

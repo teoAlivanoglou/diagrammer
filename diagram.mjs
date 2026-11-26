@@ -126,14 +126,45 @@ export function arrowGeometry(flow, items, stroke) {
   return { start, end, center, wings, path };
 }
 
-export function flowLabelPlacement(item, geometry, stroke) {
-  const { start, end, center } = geometry;
-  if (Math.abs(end.y - start.y) > Math.abs(end.x - start.x)) {
-    const left = center.x < midpoint(start, end).x;
-    return { x: center.x + (left ? -10 : 10), y: center.y, anchor: left ? 'end' : 'start' };
+function curvedLabelPosition(control, geometry, stroke, box) {
+  const { start, end, center, wings } = geometry;
+  const chord = { x: end.x - start.x, y: end.y - start.y };
+  const middle = midpoint(start, end);
+  const bulge = { x: control.x - middle.x, y: control.y - middle.y };
+  const length = Math.hypot(chord.x, chord.y);
+  const normal = length ? { x: -chord.y / length, y: chord.x / length } : bulge;
+  const magnitude = Math.hypot(normal.x, normal.y);
+  let nx = magnitude ? normal.x / magnitude : 0;
+  let ny = magnitude ? normal.y / magnitude : -1;
+  const direction = nx * bulge.x + ny * bulge.y;
+  if (direction < -1e-7 || (Math.abs(direction) <= 1e-7 && (ny > 0 || (ny === 0 && nx < 0)))) {
+    nx = -nx;
+    ny = -ny;
   }
-  const offset = item.label.split('\n').length * item.size * 0.62 + stroke + 4;
-  return { x: center.x, y: center.y - offset, anchor: 'middle' };
+  // A quadratic lies on the inner side of its midpoint tangent. Project the
+  // label bounds and arrowhead onto the outer normal to clear both.
+  const radius = (Math.abs(nx) * box.width + Math.abs(ny) * box.height) / 2;
+  const head = Math.max(0, ...wings.map(point => (point.x - center.x) * nx + (point.y - center.y) * ny));
+  const gap = 6 + stroke / 2 + radius + head;
+  return { x: center.x + nx * gap, y: center.y + ny * gap, anchor: 'middle' };
+}
+
+export function flowLabelPlacement(item, geometry, stroke, box) {
+  const { start, end, center } = geometry;
+  let placement;
+  if (item.control) {
+    placement = curvedLabelPosition(item.control, geometry, stroke, box);
+  } else if (Math.abs(end.y - start.y) > Math.abs(end.x - start.x)) {
+    placement = { x: center.x + 10, y: center.y, anchor: 'start' };
+  } else {
+    const offset = item.label.split('\n').length * item.size * 0.62 + stroke + 4;
+    placement = { x: center.x, y: center.y - offset, anchor: 'middle' };
+  }
+  return {
+    x: placement.x + (item.labelOffset?.x ?? 0),
+    y: placement.y + (item.labelOffset?.y ?? 0),
+    anchor: placement.anchor,
+  };
 }
 
 export function withCurve(flow, curved, items) {

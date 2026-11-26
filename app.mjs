@@ -150,8 +150,8 @@ function paintTip() {
   if (activeTool === 'flow') tip = pending ? 'Click where the arrow should end.' : 'Click where the arrow should start.';
   else if (activeTool !== 'select') tip = 'Click the canvas to place ' + tools[activeTool].name.toLowerCase() + '.';
   else if (item?.kind === 'flow') tip = item.control
-    ? 'Drag the square to bend. Drag a round handle onto a shape to attach it.'
-    : 'Drag a round handle onto a shape to attach it, or onto the grid to detach it.';
+    ? 'Drag the label to move it, the square to bend, or a round handle to reconnect.'
+    : 'Drag the label to move it or a round handle to reconnect.';
   else if (!state.items.length) tip = 'Pick a tool to begin.';
   else if (item && isDiagramShape(item)) tip = 'Shift-click to select more shapes · Double-click to edit a label';
   if (activeTool !== 'select') tip += ' <kbd>Esc</kbd> to cancel';
@@ -176,6 +176,7 @@ function paintSelection() {
   $('dimensions').hidden = item.kind === 'flow' || item.kind === 'text';
   $('flow-fields').hidden = item.kind !== 'flow';
   if (item.kind === 'flow') {
+    $('reset-label').hidden = !item.label || !item.labelOffset;
     for (const [id, active] of [['straight', !item.control], ['curve', Boolean(item.control)]]) {
       $(id).classList.toggle('active', active);
       $(id).setAttribute('aria-pressed', active);
@@ -361,7 +362,9 @@ canvas.addEventListener('pointerdown', event => {
     return;
   }
   lastClick = event.shiftKey ? null : click;
-  if (!event.shiftKey && (item.kind !== 'flow' || (!item.from.node && !item.to.node))) {
+  if (!event.shiftKey && event.target.closest('[data-flow-label]')) {
+    beginDrag(event, 'label', { id: item.id });
+  } else if (!event.shiftKey && (item.kind !== 'flow' || (!item.from.node && !item.to.node))) {
     beginDrag(event, 'move', { anchor: item.kind === 'flow' ? null : item });
   }
   paint();
@@ -403,6 +406,9 @@ canvas.addEventListener('pointermove', event => {
   }
   const move = p => ({ x: p.x + offsetX, y: p.y + offsetY });
   const items = drag.snapshot.items.map(item => {
+    if (drag.type === 'label') {
+      return item.id === drag.id ? { ...item, labelOffset: move(item.labelOffset ?? { x: 0, y: 0 }) } : item;
+    }
     if (drag.type === 'handle') {
       if (item.id !== drag.id) return item;
       const value = drag.handle === 'control' ? move(item.control) : snapDraggedEndpoint(point, item, drag.handle);
@@ -504,6 +510,7 @@ for (const button of document.querySelectorAll('[data-space]')) {
 $('straight').addEventListener('click', () => updateItem(onlySelected(), item => withCurve(item, false, state.items)));
 $('curve').addEventListener('click', () => updateItem(onlySelected(), item => withCurve(item, true, state.items)));
 $('reverse').addEventListener('click', () => updateItem(onlySelected(), item => ({ ...item, from: item.to, to: item.from })));
+$('reset-label').addEventListener('click', () => updateItem(onlySelected(), { labelOffset: null }));
 $('font').addEventListener('change', event => updateItem(onlySelected(), { font: event.target.value }));
 
 for (const [id, prop] of [['title', 'title'], ['thickness', 'stroke'], ['label', 'label']]) {

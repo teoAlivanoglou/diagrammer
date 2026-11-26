@@ -97,13 +97,15 @@ function wordShape(drawing, id, canvas, scale, stroke) {
 }
 
 function flowDrawing(item, state, metrics) {
-  const { start, end, wings, ...geometry } = arrowGeometry(item, state.items, state.stroke);
+  const geometry = arrowGeometry(item, state.items, state.stroke);
+  const { start, end, wings } = geometry;
   const box = bounds([start, end, ...wings, ...(item.control ? [item.control] : [])]);
   const segment = item.control ? { tag: 'quadBezTo', points: [item.control, end] } : line(end);
   const path = [move(start), segment, move(wings[0]), line(end), line(wings[1])];
   const drawing = [{ box, name: TYPES.flow.name, geometry: customGeometry(box, path) }];
   if (item.label) {
-    const placement = flowLabelPlacement(item, { start, end, ...geometry }, state.stroke);
+    const size = labelBox(item, { x: 0, y: 0 }, metrics);
+    const placement = flowLabelPlacement(item, geometry, state.stroke, size);
     drawing.push({
       box: labelBox(item, placement, metrics),
       name: 'Data flow label', geometry: preset('rect'), item, textBox: true,

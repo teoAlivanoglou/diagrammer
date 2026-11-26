@@ -41,14 +41,21 @@ export function wrapLabel(text, width, measure) {
   return lines;
 }
 
-export function centerLabelLines(lines, x, y, leading, anchor) {
+function labelInkBounds(lines, leading) {
   let top = Infinity;
   let bottom = -Infinity;
+  let width = 0;
   for (const [index, line] of lines.entries()) {
     if (!line.text.trim()) continue;
     top = Math.min(top, index * leading - line.ascent);
     bottom = Math.max(bottom, index * leading + line.descent);
+    width = Math.max(width, line.left + line.right);
   }
+  return { top, bottom, width };
+}
+
+export function centerLabelLines(lines, x, y, leading, anchor) {
+  const { top, bottom } = labelInkBounds(lines, leading);
   const center = Number.isFinite(top) ? (top + bottom) / 2 : (lines.length - 1) * leading / 2;
   return lines.map((line, index) => ({
     text: line.text,
@@ -57,7 +64,7 @@ export function centerLabelLines(lines, x, y, leading, anchor) {
   }));
 }
 
-function label(item, x, y, anchor = 'middle') {
+function measureLabel(item) {
   const font = FONTS[item.font] ?? FONTS.Arial;
   textContext ??= document.createElement('canvas').getContext('2d');
   textContext.font = item.size + 'px ' + font;
@@ -65,16 +72,20 @@ function label(item, x, y, anchor = 'middle') {
     ? wrapLabel(item.label, (item.kind === 'process' ? item.w * 0.8 : item.w) - 14,
       text => textContext.measureText(text).width)
     : item.label.split('\n');
-  const metrics = content.map(text => {
+  return content.map(text => {
     const measured = textContext.measureText(text);
     return {
       text, left: measured.actualBoundingBoxLeft, right: measured.actualBoundingBoxRight,
       ascent: measured.actualBoundingBoxAscent, descent: measured.actualBoundingBoxDescent,
     };
   });
+}
+
+function label(item, x, y, anchor = 'middle', metrics = measureLabel(item)) {
   const lines = centerLabelLines(metrics, x, y, item.size * 1.22, anchor);
   return svg('text', {
-    fill: INK, 'font-family': font, 'font-size': item.size, 'xml:space': 'preserve',
+    fill: INK, 'font-family': FONTS[item.font] ?? FONTS.Arial,
+    'font-size': item.size, 'xml:space': 'preserve',
   }, ...lines.map(line => svg('tspan', { x: line.x, y: line.y }, line.text)));
 }
 
@@ -106,8 +117,19 @@ export function drawItem(item, state, selected = false, interactive = false, zoo
       points: [g.wings[0], g.end, g.wings[1]].map(pointString).join(' '), ...stroke,
     }));
     if (item.label) {
-      const { x, y, anchor } = flowLabelPlacement(item, g, state.stroke);
-      group.append(label(item, x, y, anchor));
+      const metrics = measureLabel(item);
+      const { top, bottom, width } = labelInkBounds(metrics, item.size * 1.22);
+      const height = Math.max(0, bottom - top);
+      const { x, y, anchor } = flowLabelPlacement(item, g, state.stroke, { width, height });
+      const text = label(item, x, y, anchor, metrics);
+      if (interactive && width) {
+        const padding = 4 / zoom;
+        const left = x - width * (anchor === 'start' ? 0 : anchor === 'end' ? 1 : 0.5);
+        group.append(svg('g', { 'data-flow-label': '' }, svg('rect', {
+          x: left - padding, y: y - height / 2 - padding,
+          width: width + padding * 2, height: height + padding * 2, fill: 'transparent',
+        }), text));
+      } else group.append(text);
     }
     return group;
   }

@@ -21,6 +21,7 @@ Open http://127.0.0.1:4173/ in a current browser. The app starts with a Greek-la
 - Pick **Data flow** and click its start and end. Click a shape to attach to it or click empty canvas for a free endpoint.
 - Select an arrow and choose **Curved** to add one quadratic control point. Drag the square handle to adjust the curve, or choose **Straight** to remove it. Drag a round endpoint onto the grid to detach it. To reconnect, drag it near a shape and release when the shape highlights.
 - Double-click a shape or flow to edit its label. Labels inside shapes wrap as you resize the shape and keep any line breaks you enter. Use the **Text** tool for standalone notes. All four font options support Greek.
+- Curved arrow labels start outside the bend. Drag any arrow label to adjust its position, or use **Reset label position** to return it to automatic placement.
 - Change **Line thickness** under Diagram to update every outline and arrow. Hold Shift while selecting items to copy them together, or deselect everything to copy the full diagram.
 - Choose **Word** to download an editable .docx with your selection or the full diagram. Open it in desktop Word and select the diagram, then click an individual shape or label to edit it. Copy the group from Word to move the editable diagram into another Word document. Arrow connections follow shapes in the browser editor.
 - Choose **Copy selection** or **Copy diagram** for quick image paste. The clipboard carries a transparent PNG with the labels rendered into the image. The **PNG** button downloads the same image.
