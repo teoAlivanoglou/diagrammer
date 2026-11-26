@@ -140,9 +140,7 @@ function mainDocument(state, items) {
     ...items.filter(item => item.kind !== 'flow' && (item.kind !== 'text' || item.label))
       .map(item => nodeDrawing(item, metrics)),
   ];
-  const boxes = drawings.flatMap(drawing => drawing.item?.label && !drawing.textBox
-    ? [drawing.box, labelBox(drawing.item, drawing.item, metrics)]
-    : [drawing.box]);
+  const boxes = drawings.map(drawing => drawing.box);
   const canvas = boxes.length ? bounds(boxes, 4 + state.stroke / 2) : bounds([point(0, 0)]);
   const landscape = canvas.width > canvas.height;
   const pageWidth = landscape ? PAGE.height : PAGE.width;

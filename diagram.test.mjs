@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { alignShapes, arrowGeometry, distributeShapes, gridPoint, removeItems, sampleDiagram, snapEndpoint, withCurve } from './diagram.mjs';
-import { centerLabelLines } from './drawing.mjs';
+import { centerLabelLines, wrapLabel } from './drawing.mjs';
 import { renderWord } from './word.mjs';
 
 const left = { id: 'a', kind: 'entity', x: 0, y: 0, w: 100, h: 50 };
@@ -92,6 +92,18 @@ test('label baselines center the visible ink including multiline descenders', ()
   assert.equal(second.x + (-lines[1].left + lines[1].right) / 2, 100);
   assert.equal(second.y - first.y, 18);
   assert.equal((first.y - lines[0].ascent + second.y + lines[1].descent) / 2, 50);
+});
+
+test('shape labels wrap at word boundaries and retain explicit paragraph breaks', () => {
+  const measure = text => text.length;
+  assert.deepEqual(wrapLabel('Νέα παραγγελία πελάτη\n\nΤελική', 12, measure),
+    ['Νέα', 'παραγγελία', 'πελάτη', '', 'Τελική']);
+  assert.deepEqual(wrapLabel('Α  Β Γ', 4, measure), ['Α  Β', 'Γ']);
+});
+
+test('a long word splits without separating Greek combining accents', () => {
+  const measure = text => text.normalize('NFC').length;
+  assert.deepEqual(wrapLabel('α\u0301βα\u0301β', 2, measure), ['α\u0301β', 'α\u0301β']);
 });
 
 test('Word exports native shapes, quadratic paths, and editable Greek labels', async () => {

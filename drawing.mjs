@@ -1,4 +1,4 @@
-import { arrowGeometry, flowLabelPlacement, FONTS } from './diagram.mjs';
+import { arrowGeometry, flowLabelPlacement, FONTS, isDiagramShape } from './diagram.mjs';
 
 const SVG = 'http://www.w3.org/2000/svg';
 export const INK = '#25324a';
@@ -12,6 +12,34 @@ export function svg(tag, attrs = {}, ...children) {
 
 const pointString = point => point.x + ',' + point.y;
 let textContext;
+const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+
+export function wrapLabel(text, width, measure) {
+  const lines = [];
+  for (const paragraph of text.split('\n')) {
+    let line = '';
+    for (const [, space, word] of paragraph.matchAll(/(\s*)(\S+)/gu)) {
+      const candidate = line ? line + space + word : word;
+      if (measure(candidate) <= width) {
+        line = candidate;
+        continue;
+      }
+      if (line) lines.push(line);
+      line = word;
+      if (measure(word) <= width) continue;
+      line = '';
+      for (const { segment } of graphemes.segment(word)) {
+        if (line && measure(line + segment) > width) {
+          lines.push(line);
+          line = '';
+        }
+        line += segment;
+      }
+    }
+    lines.push(line);
+  }
+  return lines;
+}
 
 export function centerLabelLines(lines, x, y, leading, anchor) {
   let top = Infinity;
@@ -33,7 +61,11 @@ function label(item, x, y, anchor = 'middle') {
   const font = FONTS[item.font] ?? FONTS.Arial;
   textContext ??= document.createElement('canvas').getContext('2d');
   textContext.font = item.size + 'px ' + font;
-  const metrics = item.label.split('\n').map(text => {
+  const content = isDiagramShape(item)
+    ? wrapLabel(item.label, (item.kind === 'process' ? item.w * 0.8 : item.w) - 14,
+      text => textContext.measureText(text).width)
+    : item.label.split('\n');
+  const metrics = content.map(text => {
     const measured = textContext.measureText(text);
     return {
       text, left: measured.actualBoundingBoxLeft, right: measured.actualBoundingBoxRight,
