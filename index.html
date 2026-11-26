@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="An outline-only data flow diagram editor with Greek labels and clipboard export.">
+  <title>Diagrammer</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./app.mjs"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-icon" data-icon="brand"></span><span>Diagrammer</span></div>
+    <div class="document-title"><span data-icon="file"></span><input id="title" aria-label="Diagram name" maxlength="70" placeholder="Untitled diagram"><span data-icon="edit"></span></div>
+    <div class="top-actions">
+      <button id="download" class="button dark" data-icon-prefix="download" title="Download transparent PNG"><span>PNG</span></button>
+      <button id="word" class="button dark" data-icon-prefix="file" title="Download editable Word document"><span>Word</span></button>
+      <button id="copy" class="button primary" data-icon-prefix="copy"><span>Copy diagram</span></button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <aside class="sidebar tools" aria-label="Diagram tools">
+      <div class="side-heading"><span data-icon="shapes"></span><h2>Toolbox</h2></div>
+      <div class="tool-body">
+        <div id="select-tool"></div>
+        <h3>DFD symbols</h3>
+        <div id="shape-tools" class="tool-list"></div>
+        <h3>Annotation</h3>
+        <div id="text-tool"></div>
+      </div>
+      <button id="new" class="button new-button" data-icon-prefix="plus">New diagram</button>
+    </aside>
+
+    <section class="editor" aria-label="Diagram editor">
+      <div class="editor-bar">
+        <div class="canvas-name"><span data-icon="canvas"></span><h1>Canvas</h1><span class="dfd-tag">DFD</span></div>
+        <div class="editor-actions" aria-label="History and zoom">
+          <button id="undo" class="icon-btn" data-icon="undo" aria-label="Undo" title="Undo"></button>
+          <button id="redo" class="icon-btn" data-icon="redo" aria-label="Redo" title="Redo"></button>
+          <span class="separator"></span>
+          <button id="zoom-out" class="icon-btn" data-icon="minus" aria-label="Zoom out" title="Zoom out"></button>
+          <button id="zoom-reset" class="zoom-label" title="Reset view">100%</button>
+          <button id="zoom-in" class="icon-btn" data-icon="plus" aria-label="Zoom in" title="Zoom in"></button>
+          <button id="fit" class="icon-btn fit-button" data-icon="fit" aria-label="Fit diagram" title="Fit diagram"></button>
+        </div>
+      </div>
+      <div id="surface" class="surface">
+        <svg id="canvas" aria-label="Diagram canvas" tabindex="0"><g id="drawing"></g><g id="overlays"></g></svg>
+        <div id="empty" class="empty" hidden><span data-icon="canvas"></span><strong>Start a diagram</strong><span>Pick a symbol, then click the canvas to place it.</span></div>
+        <div id="tip" class="canvas-tip"></div>
+        <div id="toast" class="toast" role="status"></div>
+      </div>
+      <div class="status-bar"><span id="counts"></span><span class="save-status"><span></span><span id="save-status">Saved locally</span></span></div>
+    </section>
+
+    <aside class="sidebar inspector" aria-label="Properties">
+      <div class="side-heading"><span data-icon="sliders"></span><h2>Properties</h2></div>
+      <section class="settings">
+        <h3>Diagram</h3>
+        <div class="field-heading"><label for="thickness">Line thickness</label><output id="thickness-value" for="thickness"></output></div>
+        <input id="thickness" type="range" min="0.5" max="8" step="0.5">
+        <div class="stroke-preview" aria-hidden="true"><span id="stroke-preview"></span></div>
+      </section>
+      <section class="selection-panel">
+        <h3>Selection</h3>
+        <div id="selection-empty" class="selection-empty"><span data-icon="select"></span><strong>No selection</strong><p>Select a shape or arrow to edit its properties.</p></div>
+        <div id="selection-fields" hidden>
+          <div class="selection-name"><span id="selection-icon"></span><strong id="selection-name"></strong></div>
+          <div id="single-fields">
+            <label class="field" for="label">Label</label>
+            <textarea id="label" rows="3" placeholder="Type a label…"></textarea>
+            <div class="field-row">
+              <div><label class="field" for="font">Font</label><select id="font"></select></div>
+              <div><label class="field" for="font-size">Size</label><input id="font-size" type="number" min="8" max="72" step="1"></div>
+            </div>
+            <div id="dimensions" class="field-row sizes">
+              <div><label class="field" for="width">Width</label><input id="width" type="number" min="24" max="1600"></div>
+              <div><label class="field" for="height">Height</label><input id="height" type="number" min="24" max="1600"></div>
+            </div>
+            <div id="flow-fields" hidden>
+              <label class="field" id="line-label">Line style</label>
+              <div class="segmented" role="group" aria-labelledby="line-label">
+                <button type="button" id="straight" data-icon-prefix="flow">Straight</button>
+                <button type="button" id="curve" data-icon-prefix="curve">Curved</button>
+              </div>
+              <button id="reverse" class="button full" data-icon-prefix="reverse">Reverse direction</button>
+            </div>
+          </div>
+          <button id="remove" class="button full delete" data-icon-prefix="trash">Delete selection</button>
+        </div>
+      </section>
+      <div class="inspector-footer"><span data-icon="info"></span><p>Use Word for editable shapes and labels. Copy puts a transparent image on the clipboard.</p></div>
+    </aside>
+  </main>
+</body>
+</html>

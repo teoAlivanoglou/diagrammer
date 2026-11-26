@@ -1,0 +1,142 @@
+import { arrowGeometry, flowLabelPlacement, FONTS } from './diagram.mjs';
+
+const SVG = 'http://www.w3.org/2000/svg';
+export const INK = '#25324a';
+
+export function svg(tag, attrs = {}, ...children) {
+  const element = document.createElementNS(SVG, tag);
+  for (const [key, value] of Object.entries(attrs)) element.setAttribute(key, value);
+  element.append(...children);
+  return element;
+}
+
+const pointString = point => point.x + ',' + point.y;
+let textContext;
+
+export function centerLabelLines(lines, x, y, leading, anchor) {
+  let top = Infinity;
+  let bottom = -Infinity;
+  for (const [index, line] of lines.entries()) {
+    if (!line.text.trim()) continue;
+    top = Math.min(top, index * leading - line.ascent);
+    bottom = Math.max(bottom, index * leading + line.descent);
+  }
+  const center = Number.isFinite(top) ? (top + bottom) / 2 : (lines.length - 1) * leading / 2;
+  return lines.map((line, index) => ({
+    text: line.text,
+    x: x + (anchor === 'start' ? line.left : anchor === 'end' ? -line.right : (line.left - line.right) / 2),
+    y: y - center + index * leading,
+  }));
+}
+
+function label(item, x, y, anchor = 'middle') {
+  const font = FONTS[item.font] ?? FONTS.Arial;
+  textContext ??= document.createElement('canvas').getContext('2d');
+  textContext.font = item.size + 'px ' + font;
+  const metrics = item.label.split('\n').map(text => {
+    const measured = textContext.measureText(text);
+    return {
+      text, left: measured.actualBoundingBoxLeft, right: measured.actualBoundingBoxRight,
+      ascent: measured.actualBoundingBoxAscent, descent: measured.actualBoundingBoxDescent,
+    };
+  });
+  const lines = centerLabelLines(metrics, x, y, item.size * 1.22, anchor);
+  return svg('text', {
+    fill: INK, 'font-family': font, 'font-size': item.size, 'xml:space': 'preserve',
+  }, ...lines.map(line => svg('tspan', { x: line.x, y: line.y }, line.text)));
+}
+
+function shape(item, attrs) {
+  const { x, y, w, h } = item;
+  const left = x - w / 2;
+  const top = y - h / 2;
+  if (item.kind === 'entity') return svg('rect', { x: left, y: top, width: w, height: h, ...attrs });
+  if (item.kind === 'process') return svg('ellipse', { cx: x, cy: y, rx: w / 2, ry: h / 2, ...attrs });
+  return svg('path', { d: 'M ' + left + ' ' + top + ' h ' + w + ' M ' + left + ' ' + (top + h) + ' h ' + w, ...attrs });
+}
+
+export function drawItem(item, state, selected = false, interactive = false, zoom = 1) {
+  const isFlow = item.kind === 'flow';
+  const group = svg('g', interactive ? {
+    'data-item': item.id, class: 'item', 'aria-label': item.label || item.kind,
+  } : {});
+  const stroke = {
+    stroke: selected ? '#634de1' : INK, 'stroke-width': state.stroke, fill: 'none',
+    'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+  };
+  if (isFlow) {
+    const g = arrowGeometry(item, state.items, state.stroke);
+    if (interactive) group.append(svg('path', {
+      d: g.path, stroke: 'transparent', 'stroke-width': Math.max(14 / zoom, state.stroke),
+      fill: 'none', 'pointer-events': 'stroke',
+    }));
+    group.append(svg('path', { d: g.path, ...stroke }), svg('polyline', {
+      points: [g.wings[0], g.end, g.wings[1]].map(pointString).join(' '), ...stroke,
+    }));
+    if (item.label) {
+      const { x, y, anchor } = flowLabelPlacement(item, g, state.stroke);
+      group.append(label(item, x, y, anchor));
+    }
+    return group;
+  }
+  if (interactive && (item.kind === 'store' || item.kind === 'text')) group.append(svg('rect', {
+    x: item.x - item.w / 2, y: item.y - item.h / 2, width: item.w, height: item.h, fill: 'transparent',
+  }));
+  if (item.kind !== 'text') {
+    group.append(shape(item, { ...stroke, ...(interactive && item.kind !== 'store' ? { 'pointer-events': 'all' } : {}) }));
+  }
+  if (item.label) group.append(label(item, item.x, item.y));
+  if (selected && item.kind === 'text') {
+    group.append(svg('rect', {
+      x: item.x - item.w / 2, y: item.y - item.h / 2, width: item.w, height: item.h,
+      fill: 'none', stroke: '#634de1', 'stroke-dasharray': '4 4', 'pointer-events': 'none',
+    }));
+  }
+  return group;
+}
+
+export function drawItems(layer, state, items, selected = new Set(), interactive = false, zoom = 1) {
+  const ordered = [...items.filter(item => item.kind === 'flow'), ...items.filter(item => item.kind !== 'flow')];
+  layer.replaceChildren(...ordered.map(item => drawItem(item, state, selected.has(item.id), interactive, zoom)));
+}
+
+export function imageBounds(state, items) {
+  const stage = svg('svg', { 'aria-hidden': 'true', style: 'position:fixed;left:-9999px;top:0;visibility:hidden;' });
+  const layer = svg('g');
+  stage.append(layer);
+  document.body.append(stage);
+  try {
+    drawItems(layer, state, items);
+    const { x, y, width, height } = layer.getBBox();
+    return { x, y, width, height };
+  } finally {
+    stage.remove();
+  }
+}
+
+export async function renderPng(state, items) {
+  const box = imageBounds(state, items);
+  const padding = Math.ceil(12 + state.stroke);
+  const width = Math.ceil(box.width) + padding * 2;
+  const height = Math.ceil(box.height) + padding * 2;
+  const picture = svg('svg', { width, height, viewBox: [box.x - padding, box.y - padding, width, height].join(' ') });
+  drawItems(picture, state, items);
+  const source = new XMLSerializer().serializeToString(picture);
+  const url = URL.createObjectURL(new Blob([source], { type: 'image/svg+xml;charset=utf-8' }));
+  try {
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    const canvas = document.createElement('canvas');
+    const scale = Math.min(2, 4096 / Math.max(width, height));
+    canvas.width = Math.ceil(width * scale);
+    canvas.height = Math.ceil(height * scale);
+    const context = canvas.getContext('2d');
+    context.drawImage(image, 0, 0, width * scale, height * scale);
+    return await new Promise((resolve, reject) => canvas.toBlob(
+      blob => blob ? resolve(blob) : reject(new Error('Could not encode PNG')), 'image/png',
+    ));
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
