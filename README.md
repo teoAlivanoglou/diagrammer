@@ -28,6 +28,7 @@ Open http://127.0.0.1:4173/ in a current browser. The app starts with a Greek-la
 - Change **Line thickness** under Diagram to update every outline and arrow. Hold Shift while selecting items to copy them together, or deselect everything to copy the full diagram.
 - Choose **Word** to download an editable .docx with your selection or the full diagram. Open it in desktop Word and select the diagram, then click an individual shape or label to edit it. Copy the group from Word to move the editable diagram into another Word document. Arrow connections follow shapes in the browser editor.
 - Choose **Copy selection** or **Copy diagram** for quick image paste. The clipboard carries a transparent PNG with the labels rendered into the image. The **PNG** button downloads the same image.
+- Use **Ctrl+C / Ctrl+V** (or **Cmd+C / Cmd+V** on Mac) to copy and paste editable elements. Point at the canvas to paste at that location.
 - Use **Fit diagram** to bring everything into view. Hold Space while dragging with the canvas focused to pan, or use a trackpad.
 
 Run the geometry tests with `node --test diagram.test.mjs`.

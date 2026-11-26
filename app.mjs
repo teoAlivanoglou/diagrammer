@@ -21,6 +21,8 @@ let selected = new Set();
 let activeTool = 'select';
 let pending = null;
 let pendingInsert = null;
+let previousPaste = null;
+let pointerOnCanvas = null;
 let drag = null;
 let lastClick = null;
 let past = [];
@@ -325,8 +327,18 @@ function beginDrag(event, type, extra = {}) {
   canvas.setPointerCapture(event.pointerId);
 }
 
+function trackPointer(event) {
+  if (event.pointerType === 'mouse' || event.pointerType === 'pen') {
+    pointerOnCanvas = { clientX: event.clientX, clientY: event.clientY };
+  }
+}
+
+canvas.addEventListener('pointerenter', trackPointer);
+canvas.addEventListener('pointerleave', () => { pointerOnCanvas = null; });
+
 canvas.addEventListener('pointerdown', event => {
   if (drag || (event.button !== 0 && event.button !== 1)) return;
+  trackPointer(event);
   canvas.focus({ preventScroll: true });
   event.preventDefault();
   editingField = null;
@@ -396,6 +408,7 @@ canvas.addEventListener('pointerdown', event => {
 
 canvas.addEventListener('pointermove', event => {
   if (drag && drag.pointerId !== event.pointerId) return;
+  trackPointer(event);
   const point = location(event);
   if (!drag) {
     if (pending) {
@@ -678,6 +691,53 @@ $('copy').addEventListener('click', copyImage);
 $('download').addEventListener('click', () => downloadDiagram('png'));
 $('word').addEventListener('click', () => downloadDiagram('docx'));
 
+function isTextEditor(target) {
+  return target instanceof Element &&
+    (target.isContentEditable || target.closest('textarea, input:not([type=range]):not([type=checkbox]):not([type=file])'));
+}
+
+document.addEventListener('copy', event => {
+  if (drag || !selected.size || !event.clipboardData || isTextEditor(event.target) ||
+    document.getSelection()?.toString()) return;
+  event.clipboardData.setData('text/plain', JSON.stringify(selectionFile(state, selected)));
+  event.preventDefault();
+  previousPaste = null;
+  toast('Diagram elements copied.', true);
+});
+
+document.addEventListener('paste', event => {
+  if (drag || isTextEditor(event.target)) return;
+  const text = event.clipboardData?.getData('text/plain')?.trim();
+  if (!text?.startsWith('{')) return;
+  let file;
+  try { file = decodeFile(text); } catch { return; }
+  if (file.type !== 'selection') return;
+  event.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const cursor = pointerOnCanvas;
+  const point = cursor && cursor.clientX >= rect.left && cursor.clientX <= rect.right &&
+    cursor.clientY >= rect.top && cursor.clientY <= rect.bottom ? location(cursor) : null;
+  const target = point && $('snap-to-grid').checked ? gridPoint(point) : point;
+  const last = previousPaste?.target;
+  const sameTarget = (!target && !last) || (target && last && Math.hypot(target.x - last.x, target.y - last.y) < 1);
+  const count = previousPaste?.text === text && sameTarget ? previousPaste.count + 1 : 1;
+  const bounds = imageBounds({ ...state, items: file.items }, file.items);
+  const x = bounds.x + bounds.width / 2;
+  const y = bounds.y + bounds.height / 2;
+  const gap = count * GRID_SIZE;
+  const visible = Math.abs(x + gap - center.x) < surface.clientWidth / zoom / 2 &&
+    Math.abs(y + gap - center.y) < surface.clientHeight / zoom / 2;
+  if (target) {
+    const shift = (count - 1) * GRID_SIZE;
+    insertItems(file.items, { x: target.x - x + shift, y: target.y - y + shift });
+  } else {
+    insertItems(file.items, visible ? { x: gap, y: gap } : { x: center.x - x, y: center.y - y });
+  }
+  previousPaste = { text, target, count: target || visible ? count : 0 };
+  canvas.focus({ preventScroll: true });
+  toast('Diagram elements pasted.', true);
+});
+
 document.addEventListener('keydown', event => {
   if (event.isComposing) return;
   if (event.key === 'Escape') {
@@ -690,10 +750,7 @@ document.addEventListener('keydown', event => {
   if (event.target.closest('input, textarea, select, [contenteditable]')) return;
   const key = event.key.toLowerCase();
   const modifier = event.metaKey || event.ctrlKey;
-  if (modifier && key === 'c' && !document.getSelection()?.toString()) {
-    event.preventDefault();
-    copyImage();
-  } else if (modifier && (key === 'z' || key === 'y')) {
+  if (modifier && (key === 'z' || key === 'y')) {
     event.preventDefault();
     if (key === 'y' || event.shiftKey) history(future, past);
     else history(past, future);
