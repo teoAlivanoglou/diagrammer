@@ -17,6 +17,7 @@ Open http://127.0.0.1:4173/ in a current browser. The app starts with a Greek-la
 ## Draw and copy
 
 - Pick a symbol in the toolbox and click the canvas to place it. Drag shapes to move them and use Properties to change their dimensions.
+- Turn on **Snap to grid** in Properties to place or drag shapes by their centers. Hold Shift and click two or more symbols to align their edges or centers. With three or more symbols, use **Across** or **Down** to make the gaps between edges equal.
 - Pick **Data flow** and click its start and end. Click a shape to attach to it or click empty canvas for a free endpoint.
 - Select an arrow and choose **Curved** to add one quadratic control point. Drag the square handle to adjust the curve, or choose **Straight** to remove it. Drag a round endpoint onto the grid to detach it. To reconnect, drag it near a shape and release when the shape highlights.
 - Double-click a shape or flow to edit its label. Use the **Text** tool for standalone notes. All four font options support Greek.

@@ -1,5 +1,6 @@
 import {
-  TYPES, FONTS, sampleDiagram, arrowGeometry, snapEndpoint, withCurve, removeItems,
+  TYPES, FONTS, GRID_SIZE, sampleDiagram, arrowGeometry, snapEndpoint, withCurve, removeItems,
+  alignShapes, distributeShapes, gridPoint, isDiagramShape,
 } from './diagram.mjs';
 import { icon } from './icons.mjs';
 import { svg, drawItem, drawItems, imageBounds, renderPng } from './drawing.mjs';
@@ -152,15 +153,19 @@ function paintTip() {
     ? 'Drag the square to bend. Drag a round handle onto a shape to attach it.'
     : 'Drag a round handle onto a shape to attach it, or onto the grid to detach it.';
   else if (!state.items.length) tip = 'Pick a tool to begin.';
+  else if (item && isDiagramShape(item)) tip = 'Shift-click to select more shapes · Double-click to edit a label';
   if (activeTool !== 'select') tip += ' <kbd>Esc</kbd> to cancel';
   $('tip').innerHTML = tip;
 }
 
 function paintSelection() {
   const item = onlySelected();
+  const shapeCount = state.items.filter(entry => selected.has(entry.id) && isDiagramShape(entry)).length;
   $('selection-fields').hidden = !selected.size;
   $('selection-empty').hidden = Boolean(selected.size);
   $('single-fields').hidden = !item;
+  $('arrange').hidden = shapeCount < 2;
+  $('distribute').hidden = shapeCount < 3;
   if (!selected.size) return;
   $('selection-name').textContent = item ? TYPES[item.kind].name : selected.size + ' objects selected';
   $('selection-icon').innerHTML = icon(item?.kind ?? 'shapes');
@@ -228,7 +233,7 @@ function setViewport() {
   const h = surface.clientHeight / zoom;
   if (!w || !h) return;
   canvas.setAttribute('viewBox', [center.x - w / 2, center.y - h / 2, w, h].join(' '));
-  const gap = 22 * zoom;
+  const gap = GRID_SIZE * zoom;
   surface.style.backgroundSize = gap + 'px ' + gap + 'px';
   surface.style.backgroundPosition = (surface.clientWidth / 2 - center.x * zoom - gap / 2) + 'px ' +
     (surface.clientHeight / 2 - center.y * zoom - gap / 2) + 'px';
@@ -326,7 +331,8 @@ canvas.addEventListener('pointerdown', event => {
   }
   if (activeTool !== 'select') {
     const dimensions = TYPES[activeTool];
-    appendItem(activeTool, { x: point.x, y: point.y, w: dimensions.w, h: dimensions.h });
+    const position = $('snap-to-grid').checked ? gridPoint(point) : { x: point.x, y: point.y };
+    appendItem(activeTool, { ...position, w: dimensions.w, h: dimensions.h });
     return;
   }
   if (handle && onlySelected()) {
@@ -356,7 +362,7 @@ canvas.addEventListener('pointerdown', event => {
   }
   lastClick = event.shiftKey ? null : click;
   if (!event.shiftKey && (item.kind !== 'flow' || (!item.from.node && !item.to.node))) {
-    beginDrag(event, 'move');
+    beginDrag(event, 'move', { anchor: item.kind === 'flow' ? null : item });
   }
   paint();
 });
@@ -382,7 +388,20 @@ canvas.addEventListener('pointermove', event => {
     setViewport();
     return;
   }
-  const move = p => ({ x: p.x + dx / zoom, y: p.y + dy / zoom });
+  let offsetX = dx / zoom;
+  let offsetY = dy / zoom;
+  if (drag.anchor && $('snap-to-grid').checked) {
+    const { x, y } = drag.anchor;
+    const snapped = gridPoint({ x: x + offsetX, y: y + offsetY });
+    offsetX = snapped.x - x;
+    offsetY = snapped.y - y;
+    if (!offsetX && !offsetY) {
+      state = drag.snapshot;
+      paintCanvas();
+      return;
+    }
+  }
+  const move = p => ({ x: p.x + offsetX, y: p.y + offsetY });
   const items = drag.snapshot.items.map(item => {
     if (drag.type === 'handle') {
       if (item.id !== drag.id) return item;
@@ -469,6 +488,19 @@ $('zoom-out').addEventListener('click', () => zoomTo(zoom / 1.2));
 $('zoom-reset').addEventListener('click', () => { center = { x: 0, y: 0 }; zoomTo(1); });
 $('fit').addEventListener('click', fitDiagram);
 $('remove').addEventListener('click', deleteSelected);
+$('snap-to-grid').addEventListener('change', event => surface.classList.toggle('snapping', event.target.checked));
+$('align').addEventListener('change', event => {
+  const [axis, anchor] = event.target.value.split(':');
+  const items = alignShapes(state.items, selected, axis, anchor);
+  event.target.selectedIndex = 0;
+  if (items !== state.items) update({ ...state, items });
+});
+for (const button of document.querySelectorAll('[data-space]')) {
+  button.addEventListener('click', () => {
+    const items = distributeShapes(state.items, selected, button.dataset.space);
+    if (items !== state.items) update({ ...state, items });
+  });
+}
 $('straight').addEventListener('click', () => updateItem(onlySelected(), item => withCurve(item, false, state.items)));
 $('curve').addEventListener('click', () => updateItem(onlySelected(), item => withCurve(item, true, state.items)));
 $('reverse').addEventListener('click', () => updateItem(onlySelected(), item => ({ ...item, from: item.to, to: item.from })));

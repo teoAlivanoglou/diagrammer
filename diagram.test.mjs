@@ -1,12 +1,42 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { arrowGeometry, removeItems, sampleDiagram, snapEndpoint, withCurve } from './diagram.mjs';
+import { alignShapes, arrowGeometry, distributeShapes, gridPoint, removeItems, sampleDiagram, snapEndpoint, withCurve } from './diagram.mjs';
 import { centerLabelLines } from './drawing.mjs';
 import { renderWord } from './word.mjs';
 
 const left = { id: 'a', kind: 'entity', x: 0, y: 0, w: 100, h: 50 };
 const right = { id: 'b', kind: 'process', x: 200, y: 0, w: 100, h: 100 };
 const flow = { id: 'flow', kind: 'flow', from: { node: 'a' }, to: { node: 'b' } };
+
+test('snap rounds to visible grid intersections around the canvas origin', () => {
+  assert.deepEqual(gridPoint({ x: -34, y: 12 }), { x: -44, y: 22 });
+  assert.deepEqual(gridPoint({ x: -2, y: 32 }), { x: 0, y: 22 });
+});
+
+test('align uses the shape edges and keeps attached arrow endpoints connected', () => {
+  const items = [left, { ...right, y: 65 }, flow];
+  const aligned = alignShapes(items, new Set(['a', 'b', 'flow']), 'y', 'start');
+  assert.deepEqual(aligned.slice(0, 2).map(node => node.y - node.h / 2), [-25, -25]);
+  assert.strictEqual(aligned[2], flow);
+  assert.equal(arrowGeometry(aligned[2], aligned, 2).end.y < 65, true);
+});
+
+test('distributing varied shapes equalizes edge gaps and preserves the outside shapes when there is room', () => {
+  const middle = { ...left, id: 'middle', x: 72, w: 20 };
+  const items = [left, middle, right, flow];
+  const spaced = distributeShapes(items, new Set(['a', 'middle', 'b']), 'x');
+  assert.deepEqual(spaced.slice(0, 3).map(node => node.x), [0, 100, 200]);
+  assert.strictEqual(spaced[3], flow);
+});
+
+test('distributing overlaps expands the selection to give every shape clearance', () => {
+  const items = [left, { ...left, id: 'middle', x: 10 }, { ...right, x: 20 }];
+  const spaced = distributeShapes(items, new Set(['a', 'middle', 'b']), 'x');
+  const gap = (a, b) => b.x - b.w / 2 - (a.x + a.w / 2);
+  assert.equal(gap(spaced[0], spaced[1]), 12);
+  assert.equal(gap(spaced[1], spaced[2]), 12);
+  assert.equal(spaced[1].x, 10);
+});
 
 test('flows meet the shape borders and track node movement', () => {
   const g = arrowGeometry(flow, [left, right], 2);

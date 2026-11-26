@@ -101,6 +101,7 @@ kbd { font: 11px ui-monospace, monospace; display: inline-grid; place-items: cen
 .fit-button { margin-left: 3px; }
 
 .surface { flex: 1; position: relative; overflow: hidden; background-color: #f7f8fc; background-image: radial-gradient(circle, #cbd1e0 1px, transparent 1.15px); background-size: 22px 22px; }
+.surface.snapping { background-image: radial-gradient(circle, #aaa0cf 1px, transparent 1.15px); }
 #canvas { width: 100%; height: 100%; display: block; touch-action: none; user-select: none; outline-offset: -3px; }
 .surface.placing #canvas { cursor: crosshair; }
 #canvas .item { cursor: move; }
@@ -130,6 +131,10 @@ kbd { font: 11px ui-monospace, monospace; display: inline-grid; place-items: cen
 #thickness { display: block; width: 100%; margin: 11px 0 10px; accent-color: var(--accent); cursor: pointer; }
 .stroke-preview { display: grid; place-items: center; height: 31px; border: 1px solid #ecedf4; border-radius: 6px; background: #f8f9fc; }
 .stroke-preview span { width: 65%; border-radius: 12px; background: #30394e; }
+.snap-setting { display: flex; align-items: center; gap: 7px; margin-top: 13px; font-size: 14px; font-weight: 590; cursor: pointer; }
+.snap-setting input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); cursor: inherit; }
+.spacing-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.spacing-actions .button { padding-inline: 4px; min-height: 34px; }
 .selection-empty { min-height: 135px; padding: 13px; border: 1px dashed #d9deea; border-radius: 8px; display: grid; justify-items: center; align-content: center; gap: 7px; text-align: center; }
 .selection-empty > span { color: #7a6ccc; }
 .selection-empty strong { font-size: 14px; }
