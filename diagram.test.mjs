@@ -93,18 +93,16 @@ test('PSD calls align a wide parent with the child and keep directed couples par
 });
 
 test('PSD data labels stay aligned with the arrow midpoint as their text grows', () => {
-  const size = { width: 30, height: 16 };
-  const longer = { ...size, width: 160 };
   const center = { x: 50, y: 80 };
   for (const sign of [-1, 1]) {
     const steep = { center, outward: { x: 0.8 * sign, y: 0.6 * sign } };
-    const short = programCoupleLabelPlacement(steep, size);
-    assert.deepEqual(programCoupleLabelPlacement(steep, longer), short);
+    const short = programCoupleLabelPlacement(steep, 16);
     assert.equal(short.y, center.y);
     assert.equal(short.anchor, sign < 0 ? 'end' : 'start');
-    const shallow = { center, outward: { x: 0.6 * sign, y: 0.8 * sign } };
-    assert.equal(programCoupleLabelPlacement(shallow, longer).x, center.x);
-    assert.equal(programCoupleLabelPlacement(shallow, size).x, center.x);
+    const shallow = { center, outward: { x: 0.6 * sign, y: 0.8 * sign }, half: 15 };
+    assert.deepEqual(programCoupleLabelPlacement(shallow, 16), {
+      x: center.x, y: center.y + 24 * sign, anchor: 'middle',
+    });
   }
 });
 

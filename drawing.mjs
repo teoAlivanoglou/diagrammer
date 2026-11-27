@@ -1,4 +1,4 @@
-import { arrowGeometry, flowLabelPlacement, flowLabelPosition, FONTS, isDiagramShape, isStateMarker, programCoupleGeometry, segmentPath, stateCorner, visibleFlow } from './diagram.mjs';
+import { arrowGeometry, flowLabelPlacement, flowLabelPosition, FONTS, isDiagramShape, isStateMarker, programCoupleGeometry, segmentPath, stateCorner, visibleCurve, visibleFlow } from './diagram.mjs';
 
 const SVG = 'http://www.w3.org/2000/svg';
 export const INK = '#25324a';
@@ -154,7 +154,7 @@ function shape(item, attrs) {
   return svg('path', { d: 'M ' + left + ' ' + top + ' h ' + w + ' M ' + left + ' ' + (top + h) + ' h ' + w, ...attrs });
 }
 
-export function programCoupleLabelPlacement({ center, outward }, { width, height }) {
+export function programCoupleLabelPlacement({ center, outward, half }, height) {
   const normalX = Math.abs(outward.x);
   const normalY = Math.abs(outward.y);
   const gap = 7;
@@ -163,12 +163,14 @@ export function programCoupleLabelPlacement({ center, outward }, { width, height
     return { x: center.x + (gap + normalY * height / 2) / outward.x, y: center.y,
       anchor: outward.x < 0 ? 'end' : 'start' };
   }
-  return { x: center.x, y: center.y + (gap + normalX * width / 2 + normalY * height / 2) / outward.y,
+  // Clear the full short arrow, so this gap stays fixed as the line of text grows.
+  return { x: center.x, y: center.y + Math.sign(outward.y) * (gap + normalX * half + height / 2),
     anchor: 'middle' };
 }
 
 function drawProgramCall(group, item, geometry, stroke) {
-  group.append(svg('path', { d: geometry.path, ...stroke }));
+  const shaft = svg('path', { d: geometry.path, ...stroke });
+  group.append(shaft);
   if (Math.hypot(geometry.end.x - geometry.start.x, geometry.end.y - geometry.start.y) < 1) return;
   group.append(svg('polygon', {
     points: [geometry.end, ...geometry.wings].map(point => point.x + ',' + point.y).join(' '), fill: stroke.stroke,
@@ -179,6 +181,7 @@ function drawProgramCall(group, item, geometry, stroke) {
   ];
   const inset = 11 + stroke['stroke-width'] / 2;
   const lanes = { left: inset, right: inset };
+  const masks = [];
   for (const couple of couples) {
     if (!couple.label?.trim()) continue;
     const { side } = couple;
@@ -196,12 +199,15 @@ function drawProgramCall(group, item, geometry, stroke) {
       svg('polygon', { points: [end, ...wings].map(point => point.x + ',' + point.y).join(' '), fill: stroke.stroke }),
     ));
     const annotation = { ...item, label: couple.label };
-    const metrics = measureLabel(annotation);
+    const shallow = Math.abs(outward.x) < Math.abs(outward.y);
+    const metrics = measureLabel(annotation, undefined, shallow);
     const { width, height } = labelInkSize(metrics, annotation.size);
-    const placement = programCoupleLabelPlacement({ center, outward }, { width, height });
+    const placement = programCoupleLabelPlacement({ center, outward, half }, height);
     group.append(label(annotation, placement.x, placement.y, placement.anchor, metrics));
-    lanes[side] += 18 + Math.abs(outward.x) * width + Math.abs(outward.y) * height;
+    if (shallow) masks.push(...flowLabelWordBoxes(placement, metrics, annotation.size, stroke['stroke-width']));
+    lanes[side] += 18 + (shallow ? height / Math.abs(outward.y) : Math.abs(outward.x) * width + Math.abs(outward.y) * height);
   }
+  if (masks.length) shaft.setAttribute('d', visibleCurve(geometry, masks).map(segmentPath).join(' '));
 }
 
 export function drawItem(item, state, selected = false, interactive = false, zoom = 1) {
