@@ -246,6 +246,24 @@ test('pinned endpoints use shape-relative positions and snap near the edge midpo
   assert.deepEqual(pinAttachment(right, { x: 198, y: -50 }, 8).anchor, { angle: -Math.PI / 2 });
 });
 
+test('attachment magnets use 15-degree intervals and keep straight-edge magnets clear of corners', () => {
+  const step = Math.PI / 12;
+  const onCircle = degrees => ({ x: right.x + 50 * Math.cos(degrees * Math.PI / 180),
+    y: right.y + 50 * Math.sin(degrees * Math.PI / 180) });
+  assert.equal(pinAttachment(right, onCircle(31), 9).anchor.angle, 2 * step);
+  assert.equal(pinAttachment(right, onCircle(-46), 9).anchor.angle, -3 * step);
+  assert.ok(Math.abs(pinAttachment(right, onCircle(37.5), 9).anchor.angle - 2.5 * step) < 1e-7);
+
+  const offset = (node, x) => pinAttachment(node, { x, y: -node.h / 2 }, 9).anchor.offset;
+  const store = { ...left, kind: 'store' };
+  assert.equal(offset(left, 22), 0.4);
+  assert.equal(offset(store, -22), -0.4);
+  assert.equal(offset(left, 39), 0.78);
+  assert.equal(offset(left, 30), 0.6);
+  assert.equal(offset({ ...left, w: 30 }, 2), 2 / 15);
+  assert.equal(offset({ ...left, w: 80 }, 22), 0.5);
+});
+
 test('manual pins take priority over automatic spreading and incompatible pins are identified', () => {
   const from = pinAttachment(left, { x: 50, y: 0 });
   const to = pinAttachment(right, { x: 150, y: 0 });

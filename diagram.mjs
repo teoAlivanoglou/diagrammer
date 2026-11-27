@@ -148,6 +148,8 @@ const edgeNormals = {
   top: { x: 0, y: -1 }, right: { x: 1, y: 0 },
   bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 },
 };
+const EDGE_SNAP_STEP = 20;
+const PROCESS_SNAP_STEP = Math.PI / 12;
 
 function pinnedPort(node, anchor) {
   const rx = node.w / 2;
@@ -170,10 +172,9 @@ export function pinAttachment(node, point, magnet = 0) {
   let anchor;
   if (node.kind === 'process') {
     const angle = Math.atan2((point.y - node.y) / ry, (point.x - node.x) / rx);
-    const quarter = Math.PI / 2;
-    const cardinal = Math.round(angle / quarter) * quarter;
-    const gap = Math.hypot(rx * (Math.cos(angle) - Math.cos(cardinal)), ry * (Math.sin(angle) - Math.sin(cardinal)));
-    anchor = { angle: gap <= magnet ? cardinal : angle };
+    const snapped = Math.round(angle / PROCESS_SNAP_STEP) * PROCESS_SNAP_STEP || 0;
+    const gap = Math.hypot(rx * (Math.cos(angle) - Math.cos(snapped)), ry * (Math.sin(angle) - Math.sin(snapped)));
+    anchor = { angle: gap <= magnet && Math.abs(angle - snapped) <= PROCESS_SNAP_STEP / 3 ? snapped : angle };
   } else {
     const dx = point.x - node.x;
     const dy = point.y - node.y;
@@ -189,7 +190,12 @@ export function pinAttachment(node, point, magnet = 0) {
       const distance = Math.hypot(point.x - boundary.x, point.y - boundary.y);
       if (distance >= nearest) continue;
       nearest = distance;
-      anchor = { side, offset: Math.abs(along) <= magnet ? 0 : offset };
+      const snapped = Math.round(along / EDGE_SNAP_STEP) * EDGE_SNAP_STEP;
+      if (radius - Math.abs(snapped) >= EDGE_SNAP_STEP &&
+          Math.abs(along - snapped) <= Math.min(magnet, EDGE_SNAP_STEP / 3)) {
+        candidate.offset = snapped / radius || 0;
+      }
+      anchor = candidate;
     }
   }
   return { node: node.id, anchor };
