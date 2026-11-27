@@ -6,6 +6,7 @@ export const TYPES = {
   state: { name: 'State', shortcut: 'S', w: 160, h: 65 },
   initial: { name: 'Start state', shortcut: 'I', w: 24, h: 24 },
   final: { name: 'End state', shortcut: 'F', w: 24, h: 24 },
+  module: { name: 'Module', shortcut: 'M', w: 130, h: 56 },
   text: { name: 'Text', shortcut: 'T', w: 140, h: 36 },
 };
 
@@ -275,6 +276,16 @@ function closestPort(node, toward) {
 }
 
 function basePorts(from, to, flow) {
+  if (flow.notation === 'psd') {
+    const child = to.kind === 'module'
+      ? pinnedPort(to, flow.to.anchor ?? { side: 'top', offset: 0 }) : port(to, to);
+    if (from.kind !== 'module') return [port(from, from), child];
+    const half = from.w / 2;
+    const usable = half - Math.min(6, half / 4);
+    const parentOffset = Math.max(-usable, Math.min(usable, child.point.x - from.x)) / half;
+    const parent = pinnedPort(from, flow.from.anchor ?? { side: 'bottom', offset: parentOffset });
+    return [parent, child];
+  }
   const loop = isStateLoop(flow) && from.kind === 'state' ? stateLoop(from.id) : null;
   const fromPin = !isStateMarker(from) && (flow.from.anchor ?? loop?.from.anchor);
   const toPin = !isStateMarker(to) && (flow.to.anchor ?? loop?.to.anchor);
@@ -390,7 +401,7 @@ function flowPorts(flow, items, curved = Boolean(flow.control), stroke = 2) {
   const from = endpointPosition(flow.from, items);
   const to = endpointPosition(flow.to, items);
   let [a, b] = basePorts(from, to, flow);
-  [a, b] = separatedPorts(flow, items, from, to, a, b, stroke);
+  if (flow.notation !== 'psd') [a, b] = separatedPorts(flow, items, from, to, a, b, stroke);
   const startMarker = isStateMarker(from) ? from : null;
   const endMarker = isStateMarker(to) ? to : null;
   const startPinned = !startMarker && flow.from.anchor;
@@ -536,6 +547,7 @@ export function setCurveControl(flow, items, point, stroke = 2) {
 export function normalizeCurves(items, stroke = 2) {
   return items.map(item => {
     if (item.kind !== 'flow') return item;
+    if (item.notation === 'psd' && item.control) return { ...item, control: null };
     if (isStateLoop(item) && !item.control) return { ...item, ...stateLoop(item.from.node) };
     return item.control && !Number.isFinite(item.control.t) ? setCurveControl(item, items, item.control, stroke) : item;
   });
@@ -560,10 +572,11 @@ function markerRim(marker, toward) {
 }
 
 export function arrowGeometry(flow, items, stroke) {
-  const ports = flowPorts(flow, items, Boolean(flow.control), stroke);
+  const curved = flow.notation !== 'psd' && Boolean(flow.control);
+  const ports = flowPorts(flow, items, curved, stroke);
   let { start, end } = ports;
   let control = null;
-  if (flow.control) {
+  if (curved) {
     const { t, offset } = Number.isFinite(flow.control.t)
       ? flow.control : relativeControl(flow.control, start, end);
     const { normal } = chordFrame(start, end);
@@ -588,6 +601,20 @@ export function arrowGeometry(flow, items, stroke) {
   }));
   const path = segmentPath({ start, end, control });
   return { start, end, control, center, wings, path, manualPortsAdjusted: ports.manualPortsAdjusted };
+}
+
+export function programCoupleGeometry(call, direction, side, distance) {
+  const { axis, normal, length } = chordFrame(call.start, call.end);
+  const forward = direction === 'return' ? -1 : 1;
+  const across = side === 'right' ? -1 : 1;
+  const half = Math.min(19, length * 0.24);
+  const outward = { x: normal.x * across, y: normal.y * across };
+  const center = { x: call.center.x + outward.x * distance, y: call.center.y + outward.y * distance };
+  return {
+    center, outward, half, axis: { x: axis.x * forward, y: axis.y * forward },
+    start: { x: center.x - axis.x * forward * half, y: center.y - axis.y * forward * half },
+    end: { x: center.x + axis.x * forward * half, y: center.y + axis.y * forward * half },
+  };
 }
 
 export function segmentPath({ start, control, end }) {
@@ -781,6 +808,7 @@ export function flowLabelPlacement(item, geometry, stroke, box) {
 }
 
 export function withCurve(flow, curved, items, stroke = 2) {
+  if (flow.notation === 'psd') return flow;
   if (!curved) return isStateLoop(flow) ? flow : { ...flow, control: null };
   if (flow.control) return flow;
   const { start, end } = flowPorts(flow, items, true, stroke);

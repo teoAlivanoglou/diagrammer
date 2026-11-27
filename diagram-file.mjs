@@ -35,6 +35,11 @@ const isAnchor = (anchor, node) => anchor == null || (node.kind === 'process' ||
   : between(anchor.offset, -1, 1) && (anchor.side === 'top' || anchor.side === 'bottom' ||
     (node.kind !== 'store' && (anchor.side === 'left' || anchor.side === 'right'))));
 
+const isCouple = couple => couple && typeof couple.label === 'string' &&
+  (couple.direction === 'pass' || couple.direction === 'return') &&
+  (couple.tail === 'open' || couple.tail === 'filled') &&
+  (couple.side == null || couple.side === '' || couple.side === 'left' || couple.side === 'right');
+
 function validateItems(items) {
   if (!Array.isArray(items) || items.length > 10000) throw new Error('Invalid diagram elements.');
   const seen = new Set();
@@ -48,7 +53,10 @@ function validateItems(items) {
     seen.add(item.id);
     if (item.kind === 'flow') {
       if (!isEndpoint(item.from) || !isEndpoint(item.to) ||
-        (item.notation != null && item.notation !== 'sfd') ||
+        (item.notation != null && item.notation !== 'sfd' && item.notation !== 'psd') ||
+        (item.notation === 'psd' && (item.control != null ||
+          (item.callArrowhead != null && typeof item.callArrowhead !== 'boolean') ||
+          (item.couples != null && (!Array.isArray(item.couples) || !item.couples.every(isCouple))))) ||
         (item.control != null && !isControl(item.control)) ||
         (item.labelPosition != null && (!between(item.labelPosition.t, -1e8, 1e8) ||
           !between(item.labelPosition.offset, -5e7, 5e7))) ||

@@ -16,9 +16,17 @@ const curveDebugLayer = svg('g', { 'pointer-events': 'none', 'aria-hidden': 'tru
 canvas.insertBefore(curveDebugLayer, drawing);
 const surface = $('surface');
 const storageKey = 'diagrammer-document-v1';
-const tools = { select: { name: 'Select', shortcut: 'V' }, ...TYPES, transition: { name: 'Transition', shortcut: 'A' } };
-const dfdTools = ['entity', 'process', 'store', 'flow'];
-const sfdTools = ['state', 'initial', 'final', 'transition'];
+const tools = {
+  select: { name: 'Select', shortcut: 'V' }, ...TYPES,
+  transition: { name: 'Transition', shortcut: 'A' },
+  call: { name: 'Call', shortcut: 'A' },
+};
+const notationTools = {
+  dfd: ['entity', 'process', 'store', 'flow'],
+  sfd: ['state', 'initial', 'final', 'transition'],
+  psd: ['module', 'call'],
+};
+const arrowTools = { flow: 'dfd', transition: 'sfd', call: 'psd' };
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
 let state = load();
@@ -83,14 +91,14 @@ for (const [kind, details] of Object.entries(tools)) {
     setTool(kind);
     canvas.focus({ preventScroll: true });
   });
-  $(kind === 'select' || kind === 'text' ? kind + '-tool'
-    : dfdTools.includes(kind) ? 'dfd-symbols' : 'sfd-symbols').append(button);
+  const group = Object.keys(notationTools).find(notation => notationTools[notation].includes(kind));
+  $(group ? group + '-symbols' : kind + '-tool').append(button);
 }
 for (const font of Object.keys(FONTS)) $('font').add(new Option(font));
 
 function openNotationTools() {
-  if ($('sfd-tools').open) return sfdTools;
-  return $('dfd-tools').open ? dfdTools : [];
+  const group = Object.keys(notationTools).find(notation => $(notation + '-tools').open);
+  return notationTools[group] ?? [];
 }
 
 for (const section of document.querySelectorAll('.notation-tools')) {
@@ -183,7 +191,9 @@ function paint() {
 function paintTip() {
   const item = onlySelected();
   let tip = 'Drag empty canvas to select multiple elements';
-  if (activeTool === 'flow' || activeTool === 'transition') {
+  if (activeTool === 'call') {
+    tip = pending ? 'Click the called module.' : 'Click the calling module.';
+  } else if (activeTool === 'flow' || activeTool === 'transition') {
     tip = pending ? 'Click where the arrow should end.' : 'Click where the arrow should start.';
     if (pending && activeTool === 'transition' && itemById(pending.from.node)?.kind === 'state') {
       tip = 'Click where the transition should end. Click the same state for a self-loop.';
@@ -191,7 +201,7 @@ function paintTip() {
   }
   else if (activeTool !== 'select') tip = 'Click the canvas to place ' + tools[activeTool].name.toLowerCase() + '.';
   else if (item?.kind === 'flow') {
-    tip = item.control
+    tip = item.notation === 'psd' ? 'Add data or signal arrows under Couples in Properties.' : item.control
       ? 'Drag the square to bend or a round handle to move an attachment.'
       : 'Drag the label or a round handle to move an attachment.';
     if (item.control && (item.from.anchor || item.to.anchor) && arrowGeometry(item, state.items, state.stroke).manualPortsAdjusted) {
@@ -214,7 +224,8 @@ function paintSelection() {
   $('arrange').hidden = shapeCount < 2;
   $('distribute').hidden = shapeCount < 3;
   if (!selected.size) return;
-  const kind = item?.notation === 'sfd' ? 'transition' : item?.kind;
+  const programCall = item?.notation === 'psd';
+  const kind = programCall ? 'call' : item?.notation === 'sfd' ? 'transition' : item?.kind;
   $('selection-name').textContent = item ? tools[kind].name : selected.size + ' objects selected';
   $('selection-icon').innerHTML = icon(kind ?? 'shapes');
   if (!item) return;
@@ -222,8 +233,11 @@ function paintSelection() {
   $('font').value = item.font;
   keepValue('font-size', item.size);
   $('label-fields').hidden = isStateMarker(item);
+  $('element-label').hidden = programCall;
   $('dimensions').hidden = item.kind === 'flow' || item.kind === 'text' || isStateMarker(item);
-  $('flow-fields').hidden = item.kind !== 'flow';
+  $('flow-fields').hidden = item.kind !== 'flow' || programCall;
+  $('call-fields').hidden = !programCall;
+  if (programCall) paintCouples(item);
   if (item.kind === 'flow') {
     $('straight').disabled = Boolean(isStateLoop(item));
     $('transition-label-actions').hidden = item.notation !== 'sfd' || !item.label.trim();
@@ -237,6 +251,24 @@ function paintSelection() {
     keepValue('width', Math.round(item.w));
     keepValue('height', Math.round(item.h));
   }
+}
+
+function paintCouples(call) {
+  $('call-arrowhead').checked = Boolean(call.callArrowhead);
+  const list = $('couples');
+  const couples = call.couples ?? [];
+  if (list.children.length !== couples.length) {
+    list.replaceChildren(...couples.map(() => $('couple-row').content.cloneNode(true)));
+  }
+  couples.forEach((couple, index) => {
+    const row = list.children[index];
+    row.dataset.index = index;
+    for (const field of row.querySelectorAll('[data-couple-field]')) {
+      if (field !== document.activeElement || field.tagName === 'SELECT') {
+        field.value = couple[field.dataset.coupleField] ?? '';
+      }
+    }
+  });
 }
 
 function paintCurveDebug() {
@@ -367,13 +399,17 @@ function sameEndpoint(a, b) {
   return a.node || b.node ? a.node === b.node : Math.hypot(a.x - b.x, a.y - b.y) < 8 / zoom;
 }
 
-const attachmentFilter = notation => notation === 'sfd' ? isStateShape
-  : item => isDiagramShape(item) && !isStateShape(item);
+const attachmentFilter = notation => {
+  if (notation === 'sfd') return isStateShape;
+  if (notation === 'psd') return item => item.kind === 'module';
+  return item => isDiagramShape(item) && !isStateShape(item) && item.kind !== 'module';
+};
 
 function newArrowEndpoint(point, notation) {
   const endpoint = snapEndpoint(point, state.items, 0, undefined, attachmentFilter(notation));
   const node = endpoint.node && itemById(endpoint.node);
-  return node && !isStateMarker(node) ? centerAttachment(node, point, 9 / zoom) ?? endpoint : endpoint;
+  return node && notation !== 'psd' && !isStateMarker(node)
+    ? centerAttachment(node, point, 9 / zoom) ?? endpoint : endpoint;
 }
 
 function completeTransition(flow) {
@@ -426,7 +462,12 @@ function insertItems(items, offset) {
 }
 
 function focusLabel() {
-  if (isStateMarker(onlySelected() ?? {})) return;
+  const item = onlySelected();
+  if (item?.notation === 'psd') {
+    ($('couples').querySelector('textarea') ?? $('add-couple')).focus();
+    return;
+  }
+  if (isStateMarker(item ?? {})) return;
   $('label').focus();
   $('label').select();
 }
@@ -468,9 +509,10 @@ canvas.addEventListener('pointerdown', event => {
   }
   const item = itemById(event.target.closest('[data-item]')?.dataset.item);
   const handle = event.target.closest('[data-handle]')?.dataset.handle;
-  if (activeTool === 'flow' || activeTool === 'transition') {
-    const notation = activeTool === 'transition' ? 'sfd' : undefined;
+  if (Object.hasOwn(arrowTools, activeTool)) {
+    const notation = activeTool === 'flow' ? undefined : arrowTools[activeTool];
     const target = newArrowEndpoint(point, notation);
+    if (notation === 'psd' && !target.node) return;
     if (!pending) {
       pending = { kind: 'flow', notation, from: target, to: target };
       paint();
@@ -677,6 +719,32 @@ $('rotate-label').addEventListener('click', () => updateItem(onlySelected(), ite
 $('reset-label').addEventListener('click', () => updateItem(onlySelected(), {
   labelOffset: null, labelPosition: null, labelOpposite: null, labelUpsideDown: null,
 }));
+$('call-arrowhead').addEventListener('change', event => {
+  updateItem(onlySelected(), { callArrowhead: event.target.checked });
+});
+$('add-couple').addEventListener('click', () => {
+  const call = onlySelected();
+  if (call?.notation !== 'psd') return;
+  updateItem(call, { couples: [...(call.couples ?? []), { label: '', direction: 'pass', tail: 'open' }] });
+  $('couples').lastElementChild.querySelector('textarea').focus();
+});
+$('couples').addEventListener('input', event => {
+  const field = event.target.dataset.coupleField;
+  const call = onlySelected();
+  if (!field || call?.notation !== 'psd') return;
+  const index = Number(event.target.closest('.couple-row').dataset.index);
+  const couples = call.couples.map((couple, i) => i === index ? { ...couple, [field]: event.target.value } : couple);
+  updateItem(call, { couples }, field === 'label' ? 'couple-label-' + index : null);
+});
+$('couples').addEventListener('focusout', () => { editingField = null; });
+$('couples').addEventListener('click', event => {
+  const remove = event.target.closest('[data-remove-couple]');
+  const call = onlySelected();
+  if (!remove || call?.notation !== 'psd') return;
+  const index = Number(remove.closest('.couple-row').dataset.index);
+  updateItem(call, { couples: call.couples.filter((_, i) => i !== index) });
+  $('add-couple').focus();
+});
 $('font').addEventListener('change', event => {
   updateItem(onlySelected(), { font: event.target.value });
   canvas.focus({ preventScroll: true });

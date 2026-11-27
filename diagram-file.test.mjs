@@ -5,6 +5,24 @@ import { decodeFile, diagramFile, instantiateItems, selectionFile } from './diag
 
 const roundTrip = value => decodeFile(JSON.stringify(value));
 
+test('PSD calls preserve couples in saved diagrams and in copied selections', () => {
+  const parent = { kind: 'module', id: 'parent', x: 0, y: 0, w: 180, h: 50,
+    label: 'Μονάδα ελέγχου', font: 'Arial', size: 16 };
+  const child = { ...parent, id: 'child', y: 200, label: 'Υπολογισμός' };
+  const call = { kind: 'flow', notation: 'psd', id: 'call', from: { node: parent.id }, to: { node: child.id },
+    control: null, callArrowhead: true, label: '', font: 'Arial', size: 14, couples: [
+      { direction: 'pass', tail: 'open', label: 'ΤΑΧ\nΑπόσταση' },
+      { direction: 'return', tail: 'filled', side: 'right', label: 'Χρόνος' },
+    ] };
+  const diagram = { title: 'Δομή', stroke: 2, items: [parent, child, call] };
+  assert.deepEqual(roundTrip(diagramFile(diagram)).diagram, diagram);
+  const selection = roundTrip(selectionFile(diagram, new Set(['parent', 'call'])));
+  assert.deepEqual(selection.items.at(-1).to, { x: 0, y: 175 });
+  assert.deepEqual(selection.items.at(-1).couples, call.couples);
+  const invalid = { ...call, control: { t: 0.5, offset: 40 } };
+  assert.throws(() => roundTrip(diagramFile({ ...diagram, items: [parent, child, invalid] })), /arrow geometry/);
+});
+
 test('state symbols and Greek-labeled transitions survive save and selection copy', () => {
   const node = (kind, x) => ({ id: kind, kind, x, y: 0, w: TYPES[kind].w, h: TYPES[kind].h,
     label: kind === 'state' ? 'Σε σύνταξη' : '', font: 'Arial', size: 16 });

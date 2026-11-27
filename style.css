@@ -158,6 +158,12 @@ kbd { font: 11px ui-monospace, monospace; display: inline-grid; place-items: cen
 .inspector-footer svg { height: 16px; width: 16px; margin-top: 1px; }
 .field { display: block; font-weight: 600; font-size: 13px; margin: 12px 0 6px; }
 textarea, select, input[type="number"] { width: 100%; border: 1px solid #dce1ec; border-radius: 6px; background: #fff; color: var(--ink); font-size: 14px; padding: 6px 8px; }
+.couple-row { display: grid; gap: 5px; padding: 6px 0; }
+.couple-row textarea { min-height: 43px; }
+.couple-row + .couple-row { border-top: 1px solid var(--border); }
+.couple-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.couple-options select { font-size: 12px; padding-left: 4px; }
+.couple-options .icon-btn { min-width: 28px; justify-self: end; font-size: 17px; }
 select { appearance: none; padding-right: 21px; background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='10' viewBox='0 0 12 10'%3E%3Cpath d='m2 3 4 4 4-4' fill='none' stroke='%2368748a' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 6px center; }
 textarea { display: block; min-height: 69px; resize: vertical; }
 .field-row { display: grid; grid-template-columns: minmax(0, 1fr) 65px; gap: 8px; }

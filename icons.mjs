@@ -15,6 +15,8 @@ const paths = {
   initial: '<circle cx="12" cy="12" r="4.5" fill="currentColor"/>',
   final: '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3" fill="currentColor"/>',
   transition: '<path d="M3.5 12h16m-5-4 5 4-5 4z" fill="currentColor"/>',
+  module: '<rect x="3.5" y="6" width="17" height="12"/>',
+  call: '<path d="M3.5 5l16 14m-6-1 6 1-2-6"/>',
   flow: '<path d="M3.5 12h16m-5-5 5 5-5 5"/>',
   curve: '<path d="M3 16q7-12 17-4m-2-6 2 6-6 1"/>',
   text: '<path d="M5 7V5h14v2M12 5v14m-3 0h6"/>',

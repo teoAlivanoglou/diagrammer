@@ -1,6 +1,6 @@
 # Diagrammer
 
-A dependency-free browser editor for data flow diagrams and state flow diagrams.
+A dependency-free browser editor for data flow diagrams, state flow diagrams, and program structure diagrams.
 
 [Open Diagrammer](https://teoalivanoglou.github.io/diagrammer/)
 
@@ -43,6 +43,12 @@ Click a start point and an end point with the Transition tool. Click the same st
 For opposing transitions, select a label’s arrow and use **Swap label side** to move the label across it. **Rotate label 180°** reverses the reading direction independently. **Reset label layout** restores automatic placement and rotation.
 
 Start and end dots use automatic attachment. The transition follows the dot center for positioning and meets the visible rim. Drag away from a dot to detach.
+
+## Program structure diagrams
+
+Open **PSD** in the Toolbox. Press **M** to place a module and **A** to draw a straight call from the calling module to the called module. When the parent is wide enough, its call attachment lines up above the child. Turn on **Call arrowhead** in Properties for a pointed call line.
+
+Select a call and choose **Add couple** for a short arrow beside it. Choose **Pass** for parent-to-child or **Return** for child-to-parent. Each couple has a hollow or filled tail, an optional multiline label, and a side setting. Couples move with their call when a module is moved or resized.
 
 ## Curve debugging
 

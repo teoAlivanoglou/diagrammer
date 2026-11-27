@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { alignShapes, arrowGeometry, curveControlRegion, visibleCurve, distributeShapes, flowLabelPlacement, flowLabelPosition, gridPoint, itemsInMarquee, marqueeBox, pinAttachment, removeItems, reverseFlow, sampleDiagram, shortcutKey, snapEndpoint, stateLoop, swapTransitionLabelSide, withCurve } from './diagram.mjs';
+import { alignShapes, arrowGeometry, curveControlRegion, visibleCurve, distributeShapes, flowLabelPlacement, flowLabelPosition, gridPoint, itemsInMarquee, marqueeBox, pinAttachment, programCoupleGeometry, removeItems, reverseFlow, sampleDiagram, shortcutKey, snapEndpoint, stateLoop, swapTransitionLabelSide, withCurve } from './diagram.mjs';
 import { centerLabelLines, flowLabelWordBoxes, measureLabel, wrapLabel } from './drawing.mjs';
 
 const left = { id: 'a', kind: 'entity', x: 0, y: 0, w: 100, h: 50 };
@@ -69,6 +69,27 @@ test('curves use one control point, and straightening removes it', () => {
   assert.match(g.path, /^M .+ Q /);
   assert.ok(g.center.y < 0);
   assert.equal(withCurve(curved, false, items).control, null);
+});
+
+test('PSD calls align a wide parent with the child and keep directed couples parallel', () => {
+  const parent = { ...left, kind: 'module', w: 400 };
+  const child = { ...right, kind: 'module', x: 145, y: 180 };
+  const call = { ...flow, notation: 'psd' };
+  assert.equal(withCurve(call, true, [parent, child]), call);
+  const g = arrowGeometry({ ...call, control: { t: 0.5, offset: 40 } }, [parent, child], 2);
+  assert.deepEqual(g.start, { x: 145, y: 25 });
+  assert.deepEqual(g.end, { x: 145, y: 130 });
+  assert.equal(g.control, null);
+  const pass = programCoupleGeometry(g, 'pass', 'left', 12);
+  const returnData = programCoupleGeometry(g, 'return', 'right', 12);
+  assert.ok(pass.start.y < pass.end.y);
+  assert.ok(returnData.start.y > returnData.end.y);
+  assert.equal(pass.start.x, 133);
+  assert.equal(returnData.end.x, 157);
+  const angled = arrowGeometry(call, [{ ...parent, w: 120 }, child], 2);
+  const side = programCoupleGeometry(angled, 'return', 'left', 12);
+  assert.ok(Math.abs((side.end.x - side.start.x) * (angled.end.y - angled.start.y)
+    - (side.end.y - side.start.y) * (angled.end.x - angled.start.x)) < 1e-7);
 });
 
 test('an SFD self-transition attaches at two distinct points and bends outside the state', () => {
