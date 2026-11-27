@@ -362,15 +362,21 @@ function crossings(start, control, end, edge) {
   return [(-b - Math.sqrt(d)) / (2 * a), (-b + Math.sqrt(d)) / (2 * a)];
 }
 
-export function visibleCurve(segment, box) {
-  if (!box) return [segment];
+export function visibleCurve(segment, boxes = []) {
+  if (!boxes.length) return [segment];
   const { start, control, end } = segment;
-  const right = box.x + box.width;
-  const bottom = box.y + box.height;
-  const cuts = [
-    ...crossings(start.x, control?.x, end.x, box.x), ...crossings(start.x, control?.x, end.x, right),
-    ...crossings(start.y, control?.y, end.y, box.y), ...crossings(start.y, control?.y, end.y, bottom),
-  ].filter(t => t > 0 && t < 1).sort((a, b) => a - b);
+  const points = control ? [start, control, end] : [start, end];
+  const extent = {
+    left: Math.min(...points.map(point => point.x)), right: Math.max(...points.map(point => point.x)),
+    top: Math.min(...points.map(point => point.y)), bottom: Math.max(...points.map(point => point.y)),
+  };
+  const masks = boxes.map(box => ({ x: box.x, y: box.y, right: box.x + box.width, bottom: box.y + box.height }))
+    .filter(box => box.x <= extent.right && box.right >= extent.left && box.y <= extent.bottom && box.bottom >= extent.top);
+  if (!masks.length) return [segment];
+  const cuts = masks.flatMap(box => [
+    ...crossings(start.x, control?.x, end.x, box.x), ...crossings(start.x, control?.x, end.x, box.right),
+    ...crossings(start.y, control?.y, end.y, box.y), ...crossings(start.y, control?.y, end.y, box.bottom),
+  ]).filter(t => t > 0 && t < 1).sort((a, b) => a - b);
   const at = t => {
     const u = 1 - t;
     return control
@@ -384,7 +390,7 @@ export function visibleCurve(segment, box) {
   for (const to of [...cuts, 1]) {
     if (to - from < 1e-8) continue;
     const point = at((from + to) / 2);
-    if (point.x < box.x || point.x > right || point.y < box.y || point.y > bottom) {
+    if (!masks.some(box => point.x >= box.x && point.x <= box.right && point.y >= box.y && point.y <= box.bottom)) {
       const previous = intervals.at(-1);
       if (previous && previous[1] === from) previous[1] = to;
       else intervals.push([from, to]);
@@ -401,10 +407,10 @@ export function visibleCurve(segment, box) {
   });
 }
 
-export function visibleFlow(geometry, box) {
+export function visibleFlow(geometry, boxes) {
   return [
-    ...visibleCurve(geometry, box),
-    ...geometry.wings.flatMap(wing => visibleCurve({ start: wing, end: geometry.end }, box)),
+    ...visibleCurve(geometry, boxes),
+    ...geometry.wings.flatMap(wing => visibleCurve({ start: wing, end: geometry.end }, boxes)),
   ];
 }
 

@@ -1,5 +1,5 @@
 import { arrowGeometry, FONTS, flowLabelPlacement, TYPES, visibleFlow } from './diagram.mjs';
-import { flowLabelBox, INK, labelInkBounds, labelInkSize, measureLabel } from './drawing.mjs';
+import { flowLabelLineBoxes, INK, labelInkBounds, labelInkSize, measureLabel } from './drawing.mjs';
 
 const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
@@ -115,18 +115,19 @@ function flowDrawing(item, state, metrics) {
   const { start, end, control, wings } = geometry;
   const box = bounds([start, end, ...wings, ...(control ? [control] : [])]);
   const drawing = [];
-  let mask;
+  let masks;
   if (item.label) {
-    const size = metrics ? labelInkSize(measureLabel(item, metrics), item.size) : labelBox(item, { x: 0, y: 0 }, metrics);
+    const lines = measureLabel(item, metrics);
+    const size = labelInkSize(lines, item.size);
     const placement = flowLabelPlacement(item, geometry, state.stroke, size);
-    if (size.width && item.label.trim()) mask = flowLabelBox(placement, size, 4 + state.stroke / 2);
+    masks = flowLabelLineBoxes(placement, lines, item.size, state.stroke);
     drawing.push({
       box: labelBox(item, placement, metrics),
       name: 'Data flow label', geometry: preset('rect'), item, textBox: true,
       alignment: { start: 'left', middle: 'center', end: 'right' }[placement.anchor],
     });
   }
-  const path = visibleFlow(geometry, mask).flatMap(part => [move(part.start),
+  const path = visibleFlow(geometry, masks).flatMap(part => [move(part.start),
     part.control ? { tag: 'quadBezTo', points: [part.control, part.end] } : line(part.end)]);
   if (path.length) drawing.unshift({ box, name: TYPES.flow.name, geometry: customGeometry(box, path) });
   return drawing;

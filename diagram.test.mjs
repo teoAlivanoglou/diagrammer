@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { alignShapes, arrowGeometry, visibleCurve, distributeShapes, flowLabelPlacement, flowLabelPosition, gridPoint, itemsInMarquee, marqueeBox, removeItems, reverseFlow, sampleDiagram, shortcutKey, snapEndpoint, withCurve } from './diagram.mjs';
-import { centerLabelLines, wrapLabel } from './drawing.mjs';
+import { centerLabelLines, flowLabelLineBoxes, wrapLabel } from './drawing.mjs';
 import { renderWord } from './word.mjs';
 
 const left = { id: 'a', kind: 'entity', x: 0, y: 0, w: 100, h: 50 };
@@ -110,14 +110,26 @@ test('opposite flows use separate attachment points on the same store rail and p
 test('the transparent label gap preserves quadratic segments outside its bounds', () => {
   const curve = { start: { x: 0, y: 0 }, control: { x: 50, y: -100 }, end: { x: 100, y: 0 } };
   const box = { x: 40, y: -55, width: 20, height: 10 };
-  const parts = visibleCurve(curve, box);
+  const parts = visibleCurve(curve, [box]);
   assert.equal(parts.length, 2);
   assert.deepEqual(parts[0].start, curve.start);
   assert.ok(Math.abs(parts[0].end.x - 40) < 1e-7);
   assert.ok(Math.abs(parts[1].start.x - 60) < 1e-7);
   assert.deepEqual(parts[1].end, curve.end);
   assert.ok(parts.every(part => part.control));
-  assert.deepEqual(visibleCurve(curve, { x: -1, y: -101, width: 102, height: 102 }), []);
+  assert.deepEqual(visibleCurve(curve, [{ x: -1, y: -101, width: 102, height: 102 }]), []);
+});
+
+test('only the long line interrupts an arrow outside the shorter lines', () => {
+  const lines = ['AAA', 'hello, world, how are you', 'foo', 'bar'].map(text => ({
+    text, left: 0, right: text.length * 5, ascent: 9, descent: 2,
+  }));
+  const boxes = flowLabelLineBoxes({ x: 0, y: 0, anchor: 'middle' }, lines, 14, 2);
+  assert.equal(boxes.length, 4);
+  const parts = visibleCurve({ start: { x: 40, y: -50 }, end: { x: 40, y: 50 } }, boxes);
+  assert.equal(parts.length, 2);
+  assert.ok(Math.abs(parts[0].end.y - boxes[1].y) < 1e-7);
+  assert.ok(Math.abs(parts[1].start.y - boxes[1].y - boxes[1].height) < 1e-7);
 });
 
 test('curved labels keep their full ink box beyond the outside tangent', () => {

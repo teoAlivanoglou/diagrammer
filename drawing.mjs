@@ -65,7 +65,12 @@ export function centerLabelLines(lines, x, y, leading, anchor) {
 
 export function measureLabel(item, context) {
   const font = FONTS[item.font] ?? FONTS.Arial;
-  context ??= (textContext ??= document.createElement('canvas').getContext('2d'));
+  context ??= (textContext ??= globalThis.document?.createElement('canvas').getContext('2d'));
+  if (!context) {
+    return item.label.split('\n').map(text => ({
+      text, left: 0, right: [...text].length * item.size * 0.7, ascent: item.size * 0.8, descent: item.size * 0.2,
+    }));
+  }
   context.font = item.size + 'px ' + font;
   const content = isDiagramShape(item)
     ? wrapLabel(item.label, (item.kind === 'process' ? item.w * 0.8 : item.w) - 14,
@@ -89,6 +94,22 @@ export function labelInkSize(metrics, size) {
 export function flowLabelBox({ x, y, anchor }, { width, height }, padding) {
   const left = x - width * (anchor === 'start' ? 0 : anchor === 'end' ? 1 : 0.5);
   return { x: left - padding, y: y - height / 2 - padding, width: width + 2 * padding, height: height + 2 * padding };
+}
+
+export function flowLabelLineBoxes({ x, y, anchor }, metrics, size, stroke) {
+  const lines = centerLabelLines(metrics, x, y, size * 1.22, anchor);
+  const padX = 3 + stroke / 2;
+  const padY = 2 + stroke / 2;
+  const boxes = [];
+  metrics.forEach((ink, index) => {
+    const width = ink.left + ink.right;
+    if (!ink.text.trim() || width <= 0) return;
+    boxes.push({
+      x: lines[index].x - ink.left - padX, y: lines[index].y - ink.ascent - padY,
+      width: width + padX * 2, height: ink.ascent + ink.descent + padY * 2,
+    });
+  });
+  return boxes;
 }
 
 export function flowLabelCenter(item, geometry, stroke) {
@@ -138,7 +159,7 @@ export function drawItem(item, state, selected = false, interactive = false, zoo
       d: g.path, stroke: 'transparent', 'stroke-width': Math.max(14 / zoom, state.stroke),
       fill: 'none', 'pointer-events': 'stroke',
     }));
-    let mask;
+    let masks;
     let annotation;
     if (item.label) {
       const metrics = measureLabel(item);
@@ -146,13 +167,13 @@ export function drawItem(item, state, selected = false, interactive = false, zoo
       const placement = flowLabelPlacement(item, g, state.stroke, size);
       const { x, y, anchor } = placement;
       const text = label(item, x, y, anchor, metrics);
-      if (size.width) mask = flowLabelBox(placement, size, 4 + state.stroke / 2);
+      masks = flowLabelLineBoxes(placement, metrics, item.size, state.stroke);
       annotation = interactive && size.width
         ? svg('g', { 'data-flow-label': '' },
           svg('rect', { ...flowLabelBox(placement, size, 4 / zoom), fill: 'transparent' }), text)
         : text;
     }
-    const path = visibleFlow(g, mask).map(segmentPath).join(' ');
+    const path = visibleFlow(g, masks).map(segmentPath).join(' ');
     if (path) group.append(svg('path', { d: path, ...stroke }));
     if (annotation) group.append(annotation);
     return group;
