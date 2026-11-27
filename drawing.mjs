@@ -1,4 +1,4 @@
-import { arrowGeometry, flowLabelPlacement, flowLabelPosition, FONTS, isDiagramShape, segmentPath, visibleFlow } from './diagram.mjs';
+import { arrowGeometry, flowLabelPlacement, flowLabelPosition, FONTS, isDiagramShape, isStateMarker, segmentPath, stateCorner, visibleFlow } from './diagram.mjs';
 
 const SVG = 'http://www.w3.org/2000/svg';
 export const INK = '#25324a';
@@ -141,8 +141,16 @@ function shape(item, attrs) {
   const { x, y, w, h } = item;
   const left = x - w / 2;
   const top = y - h / 2;
-  if (item.kind === 'entity') return svg('rect', { x: left, y: top, width: w, height: h, ...attrs });
+  if (item.kind === 'entity' || item.kind === 'state') return svg('rect', {
+    x: left, y: top, width: w, height: h, rx: item.kind === 'state' ? stateCorner(item) : 0, ...attrs,
+  });
   if (item.kind === 'process') return svg('ellipse', { cx: x, cy: y, rx: w / 2, ry: h / 2, ...attrs });
+  if (isStateMarker(item)) {
+    const dot = svg('circle', { cx: x, cy: y, r: Math.min(w, h) * (item.kind === 'initial' ? 0.29 : 0.23),
+      fill: attrs.stroke, 'pointer-events': attrs['pointer-events'] ?? 'none' });
+    return item.kind === 'initial' ? dot : svg('g', {}, dot,
+      svg('circle', { cx: x, cy: y, r: Math.min(w, h) * 0.43, ...attrs }));
+  }
   return svg('path', { d: 'M ' + left + ' ' + top + ' h ' + w + ' M ' + left + ' ' + (top + h) + ' h ' + w, ...attrs });
 }
 
@@ -157,26 +165,45 @@ export function drawItem(item, state, selected = false, interactive = false, zoo
   };
   if (isFlow) {
     const g = arrowGeometry(item, state.items, state.stroke);
+    const transition = item.notation === 'sfd';
     if (interactive) group.append(svg('path', {
       d: g.path, stroke: 'transparent', 'stroke-width': Math.max(14 / zoom, state.stroke),
       fill: 'none', 'pointer-events': 'stroke',
     }));
     let masks;
     let annotation;
+    let geometry = transition ? { ...g, wings: [] } : g;
+    let transform;
     if (item.label) {
       const metrics = measureLabel(item, undefined, true);
       const size = labelInkSize(metrics, item.size);
       const placement = flowLabelPlacement(item, g, state.stroke, size);
-      const { x, y, anchor } = placement;
+      const { x, y, anchor, angle } = placement;
+      if (angle) {
+        transform = 'rotate(' + angle + ' ' + x + ' ' + y + ')';
+        const rad = angle * Math.PI / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        const local = point => {
+          const dx = point.x - x;
+          const dy = point.y - y;
+          return { x: x + cos * dx + sin * dy, y: y - sin * dx + cos * dy };
+        };
+        geometry = { start: local(g.start), end: local(g.end), control: g.control && local(g.control), wings: [] };
+      }
       const text = label(item, x, y, anchor, metrics);
       masks = flowLabelWordBoxes(placement, metrics, item.size, state.stroke);
-      annotation = interactive && size.width
-        ? svg('g', { 'data-flow-label': '' },
-          svg('rect', { ...flowLabelBox(placement, size, 4 / zoom), fill: 'transparent' }), text)
-        : text;
+      const hit = interactive && size.width
+        ? svg('rect', { ...flowLabelBox(placement, size, 4 / zoom), fill: 'transparent' })
+        : null;
+      annotation = svg('g', { ...(hit && { 'data-flow-label': '' }), ...(transform && { transform }) },
+        ...(hit ? [hit, text] : [text]));
     }
-    const path = visibleFlow(g, masks).map(segmentPath).join(' ');
-    if (path) group.append(svg('path', { d: path, ...stroke }));
+    const path = visibleFlow(geometry, masks).map(segmentPath).join(' ');
+    if (path) group.append(svg('path', { d: path, ...stroke, ...(transform && { transform }) }));
+    if (transition) group.append(svg('polygon', {
+      points: [g.end, ...g.wings].map(point => point.x + ',' + point.y).join(' '), fill: stroke.stroke,
+    }));
     if (annotation) group.append(annotation);
     return group;
   }
@@ -186,7 +213,7 @@ export function drawItem(item, state, selected = false, interactive = false, zoo
   if (item.kind !== 'text') {
     group.append(shape(item, { ...stroke, ...(interactive && item.kind !== 'store' ? { 'pointer-events': 'all' } : {}) }));
   }
-  if (item.label) group.append(label(item, item.x, item.y));
+  if (item.label && !isStateMarker(item)) group.append(label(item, item.x, item.y));
   if (selected && item.kind === 'text') {
     group.append(svg('rect', {
       x: item.x - item.w / 2, y: item.y - item.h / 2, width: item.w, height: item.h,

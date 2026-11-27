@@ -1,9 +1,25 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { arrowGeometry, sampleDiagram } from './diagram.mjs';
+import { arrowGeometry, sampleDiagram, stateLoop, TYPES } from './diagram.mjs';
 import { decodeFile, diagramFile, instantiateItems, selectionFile } from './diagram-file.mjs';
 
 const roundTrip = value => decodeFile(JSON.stringify(value));
+
+test('state symbols and Greek-labeled transitions survive save and selection copy', () => {
+  const node = (kind, x) => ({ id: kind, kind, x, y: 0, w: TYPES[kind].w, h: TYPES[kind].h,
+    label: kind === 'state' ? 'Σε σύνταξη' : '', font: 'Arial', size: 16 });
+  const loop = { id: 'loop', kind: 'flow', notation: 'sfd', ...stateLoop('state'),
+    label: 'Διόρθωση / Ενημέρωση', font: 'Arial', size: 14 };
+  const diagram = { title: 'Δοκιμή', stroke: 2, items: [node('initial', -150), node('state', 0), node('final', 150), loop] };
+  assert.deepEqual(roundTrip(diagramFile(diagram)).diagram, diagram);
+  const file = roundTrip(selectionFile(diagram, new Set(['state', 'loop'])));
+  let id = 0;
+  const [state, transition] = instantiateItems(file.items, { x: 10, y: 20 }, () => String(++id));
+  assert.equal(transition.from.node, state.id);
+  assert.equal(transition.to.node, state.id);
+  assert.equal(transition.notation, 'sfd');
+  assert.deepEqual(transition.control, loop.control);
+});
 
 test('the versioned document preserves Greek text, coordinates, and diagram settings', () => {
   const diagram = sampleDiagram();

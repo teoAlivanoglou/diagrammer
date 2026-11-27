@@ -1,8 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { alignShapes, arrowGeometry, curveControlRegion, visibleCurve, distributeShapes, flowLabelPlacement, flowLabelPosition, gridPoint, itemsInMarquee, marqueeBox, pinAttachment, removeItems, reverseFlow, sampleDiagram, shortcutKey, snapEndpoint, withCurve } from './diagram.mjs';
+import { alignShapes, arrowGeometry, curveControlRegion, visibleCurve, distributeShapes, flowLabelPlacement, flowLabelPosition, gridPoint, itemsInMarquee, marqueeBox, pinAttachment, removeItems, reverseFlow, sampleDiagram, shortcutKey, snapEndpoint, stateLoop, withCurve } from './diagram.mjs';
 import { centerLabelLines, flowLabelWordBoxes, measureLabel, wrapLabel } from './drawing.mjs';
-import { renderWord } from './word.mjs';
 
 const left = { id: 'a', kind: 'entity', x: 0, y: 0, w: 100, h: 50 };
 const right = { id: 'b', kind: 'process', x: 200, y: 0, w: 100, h: 100 };
@@ -70,6 +69,38 @@ test('curves use one control point, and straightening removes it', () => {
   assert.match(g.path, /^M .+ Q /);
   assert.ok(g.center.y < 0);
   assert.equal(withCurve(curved, false, items).control, null);
+});
+
+test('an SFD self-transition attaches at two distinct points and bends outside the state', () => {
+  const state = { ...left, kind: 'state' };
+  const loop = { kind: 'flow', notation: 'sfd', ...stateLoop(state.id) };
+  const geometry = arrowGeometry(loop, [state, loop], 2);
+  assert.ok(geometry.start.x < geometry.end.x);
+  assert.equal(geometry.start.y, -25);
+  assert.equal(geometry.end.y, -25);
+  assert.ok(geometry.control.y < -25);
+  assert.equal(geometry.manualPortsAdjusted, false);
+  assert.deepEqual(withCurve(loop, false, [state, loop]), loop);
+  const reversed = arrowGeometry(reverseFlow(loop, [state, loop]), [state, loop], 2);
+  assert.deepEqual(reversed.start, geometry.end);
+  assert.deepEqual(reversed.control, geometry.control);
+});
+
+test('SFD labels stay parallel to the arrow and sit on the outside normal at the curve midpoint', () => {
+  const transition = { notation: 'sfd', from: { x: 10, y: 15 }, to: { x: 110, y: 115 } };
+  const box = { width: 60, height: 12 };
+  const straight = arrowGeometry(transition, [], 2);
+  assert.equal(flowLabelPlacement(transition, straight, 2, box).angle, 45);
+  const curved = { ...transition, control: { t: 0.2, offset: 70 } };
+  const geometry = arrowGeometry(curved, [], 2);
+  const label = flowLabelPlacement(curved, geometry, 2, box);
+  assert.equal(label.angle, 45);
+  assert.ok(Math.abs(label.x - geometry.center.x + (label.y - geometry.center.y)) < 1e-7);
+  assert.ok(label.y > geometry.center.y);
+  const reversed = reverseFlow(curved, []);
+  const flipped = flowLabelPlacement(reversed, arrowGeometry(reversed, [], 2), 2, box);
+  assert.equal(flipped.angle, label.angle);
+  assert.ok(Math.hypot(flipped.x - label.x, flipped.y - label.y) < 1e-7);
 });
 
 test('a curve keeps its fractional position and perpendicular offset when an endpoint moves', () => {
@@ -311,31 +342,4 @@ test('shape labels wrap at word boundaries and retain explicit paragraph breaks'
 test('a long word splits without separating Greek combining accents', () => {
   const measure = text => text.normalize('NFC').length;
   assert.deepEqual(wrapLabel('α\u0301βα\u0301β', 2, measure), ['α\u0301β', 'α\u0301β']);
-});
-
-test('Word exports native shapes, quadratic paths, and editable Greek labels', async () => {
-  const sample = sampleDiagram();
-  const document = await renderWord(sample, sample.items).text();
-  assert.match(document, /<wpg:wgp>/);
-  assert.match(document, /<a:prstGeom prst="ellipse">/);
-  assert.match(document, /<a:quadBezTo>/);
-  assert.match(document, /<wps:txbx>[^]*?Επεξεργασία/);
-  assert.doesNotMatch(document, /word\/media\//);
-});
-
-test('Word keeps text fields on unlabeled shapes and excludes unselected shapes', async () => {
-  const sample = sampleDiagram();
-  const item = { ...sample.items[0], label: '' };
-  const document = await renderWord(sample, [item]).text();
-  assert.match(document, /<wps:txbx>/);
-  assert.doesNotMatch(document, /Αποθήκη|<a:quadBezTo>/);
-});
-
-test('Word export uses an explicit A4 page orientation and centers the drawing', async () => {
-  const sample = sampleDiagram();
-  const portrait = await renderWord(sample, sample.items).text();
-  const landscape = await renderWord(sample, sample.items, { landscape: true }).text();
-  assert.match(portrait, /<w:pgSz w:w="11906" w:h="16838"\/>/);
-  assert.match(landscape, /<w:pgSz w:w="16838" w:h="11906" w:orient="landscape"\/>/);
-  assert.match(portrait, /<wp:positionH relativeFrom="margin"><wp:align>center<\/wp:align>/);
 });

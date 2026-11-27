@@ -3,6 +3,9 @@ export const TYPES = {
   process: { name: 'Process', shortcut: 'P', w: 132, h: 132 },
   store: { name: 'Data store', shortcut: 'D', w: 176, h: 50 },
   flow: { name: 'Data flow', shortcut: 'A' },
+  state: { name: 'State', shortcut: 'S', w: 160, h: 65 },
+  initial: { name: 'Start state', shortcut: 'I', w: 24, h: 24 },
+  final: { name: 'End state', shortcut: 'F', w: 24, h: 24 },
   text: { name: 'Text', shortcut: 'T', w: 140, h: 36 },
 };
 
@@ -30,6 +33,24 @@ export function gridPoint({ x, y }) {
 }
 
 export const isDiagramShape = item => item.kind !== 'flow' && item.kind !== 'text';
+export const isStateMarker = item => item.kind === 'initial' || item.kind === 'final';
+export const isStateShape = item => item.kind === 'state' || isStateMarker(item);
+export const isStateLoop = item => item.notation === 'sfd' && item.from?.node && item.from.node === item.to.node;
+export const stateCorner = item => Math.min(12, item.w / 5, item.h / 5);
+const isEllipse = item => item.kind === 'process' || isStateMarker(item);
+const radii = item => {
+  if (!isStateMarker(item)) return { rx: item.w / 2, ry: item.h / 2 };
+  const radius = Math.min(item.w, item.h) * (item.kind === 'initial' ? 0.29 : 0.43);
+  return { rx: radius, ry: radius };
+};
+
+export function stateLoop(node) {
+  return {
+    from: { node, anchor: { side: 'top', offset: -0.38 } },
+    to: { node, anchor: { side: 'top', offset: 0.38 } },
+    control: { t: 0.5, offset: -106 },
+  };
+}
 
 export function marqueeBox(start, end) {
   return {
@@ -97,18 +118,18 @@ export function endpointPosition(endpoint, items) {
   return endpoint.node ? items.find(item => item.id === endpoint.node) : endpoint;
 }
 
-export function snapEndpoint(point, items, tolerance = 0, excludedNode) {
+export function snapEndpoint(point, items, tolerance = 0, excludedNode, accept = isDiagramShape) {
   let closest;
   let bestDistance = tolerance;
   for (const item of items) {
-    if (item.id === excludedNode || !isDiagramShape(item)) continue;
+    if (item.id === excludedNode || !accept(item)) continue;
     const dx = Math.abs(point.x - item.x);
     const dy = Math.abs(point.y - item.y);
-    const rx = item.w / 2;
-    const ry = item.h / 2;
-    const distance = item.kind === 'process'
+    const { rx, ry } = radii(item);
+    const corner = item.kind === 'state' ? stateCorner(item) : 0;
+    const distance = isEllipse(item)
       ? Math.hypot(dx, dy) * Math.max(0, 1 - 1 / Math.hypot(dx / rx, dy / ry))
-      : Math.hypot(Math.max(0, dx - rx), Math.max(0, dy - ry));
+      : Math.max(0, Math.hypot(Math.max(0, dx - rx + corner), Math.max(0, dy - ry + corner)) - corner);
     if (distance <= bestDistance) {
       closest = item.id;
       bestDistance = distance;
@@ -124,8 +145,7 @@ export function snapEndpoint(point, items, tolerance = 0, excludedNode) {
 
 function port(node, toward, side) {
   if (!node.w) return { point: { x: node.x, y: node.y }, normal: null };
-  const rx = node.w / 2;
-  const ry = node.h / 2;
+  const { rx, ry } = radii(node);
   const dx = toward.x - node.x || (toward.y === node.y ? 1 : 0);
   const dy = toward.y - node.y;
   if (node.kind === 'store') {
@@ -133,13 +153,17 @@ function port(node, toward, side) {
     const x = Math.max(-rx, Math.min(rx, Math.abs(dy) > 1e-7 ? dx * ry / Math.abs(dy) : Math.sign(dx) * rx));
     return { point: { x: node.x + x, y: node.y + vertical * ry }, normal: { x: 0, y: vertical } };
   }
-  if (node.kind === 'process') {
+  if (isEllipse(node)) {
     const factor = 1 / Math.hypot(dx / rx, dy / ry);
     const normal = unit({ x: dx / rx ** 2, y: dy / ry ** 2 });
     return { point: { x: node.x + dx * factor, y: node.y + dy * factor }, normal };
   }
   const horizontal = Math.abs(dx) / rx >= Math.abs(dy) / ry;
   const factor = horizontal ? rx / Math.abs(dx) : ry / Math.abs(dy);
+  if (node.kind === 'state') {
+    const side = horizontal ? (dx < 0 ? 'left' : 'right') : (dy < 0 ? 'top' : 'bottom');
+    return pinnedPort(node, { side, offset: horizontal ? dy * factor / ry : dx * factor / rx });
+  }
   return { point: { x: node.x + dx * factor, y: node.y + dy * factor },
     normal: horizontal ? { x: Math.sign(dx), y: 0 } : { x: 0, y: Math.sign(dy) } };
 }
@@ -152,25 +176,27 @@ const EDGE_SNAP_STEP = 20;
 const PROCESS_SNAP_STEP = Math.PI / 12;
 
 function pinnedPort(node, anchor) {
-  const rx = node.w / 2;
-  const ry = node.h / 2;
-  if (node.kind === 'process') {
+  const { rx, ry } = radii(node);
+  if (isEllipse(node)) {
     const x = Math.cos(anchor.angle);
     const y = Math.sin(anchor.angle);
     return { point: { x: node.x + rx * x, y: node.y + ry * y }, normal: unit({ x: x / rx, y: y / ry }) };
   }
   const normal = edgeNormals[anchor.side];
+  const radius = normal.x ? ry : rx;
+  const slide = anchor.offset * radius;
+  const inset = node.kind === 'state' ? radius - stateCorner(node) : radius;
+  const offset = Math.max(-inset, Math.min(inset, slide));
   return { point: {
-    x: node.x + rx * (normal.x || anchor.offset),
-    y: node.y + ry * (normal.y || anchor.offset),
+    x: node.x + (normal.x ? rx * normal.x : offset),
+    y: node.y + (normal.y ? ry * normal.y : offset),
   }, normal };
 }
 
 export function pinAttachment(node, point, magnet = 0) {
-  const rx = node.w / 2;
-  const ry = node.h / 2;
+  const { rx, ry } = radii(node);
   let anchor;
-  if (node.kind === 'process') {
+  if (isEllipse(node)) {
     const angle = Math.atan2((point.y - node.y) / ry, (point.x - node.x) / rx);
     const snapped = Math.round(angle / PROCESS_SNAP_STEP) * PROCESS_SNAP_STEP || 0;
     const gap = Math.hypot(rx * (Math.cos(angle) - Math.cos(snapped)), ry * (Math.sin(angle) - Math.sin(snapped)));
@@ -202,8 +228,9 @@ export function pinAttachment(node, point, magnet = 0) {
 }
 
 function basePorts(from, to, flow) {
-  const fromPin = flow.from.anchor;
-  const toPin = flow.to.anchor;
+  const loop = isStateLoop(flow) && from.kind === 'state' ? stateLoop(from.id) : null;
+  const fromPin = flow.from.anchor ?? loop?.from.anchor;
+  const toPin = flow.to.anchor ?? loop?.to.anchor;
   const aPin = fromPin && pinnedPort(from, fromPin);
   const bPin = toPin && pinnedPort(to, toPin);
   let a = aPin || port(from, bPin?.point ?? to, flow.from.side);
@@ -238,9 +265,8 @@ function spreadPort(node, attachment, laneAxis, index, count, spacing) {
   if (count < 2) return attachment;
   const { point, normal } = attachment;
   const lane = index - (count - 1) / 2;
-  if (node.kind === 'process') {
-    const rx = node.w / 2;
-    const ry = node.h / 2;
+  if (isEllipse(node)) {
+    const { rx, ry } = radii(node);
     const angle = Math.atan2((point.y - node.y) / ry, (point.x - node.x) / rx);
     const tangent = { x: -rx * Math.sin(angle), y: ry * Math.cos(angle) };
     const sign = dot(tangent, laneAxis) >= 0 ? 1 : -1;
@@ -250,7 +276,7 @@ function spreadPort(node, attachment, laneAxis, index, count, spacing) {
   }
   const axis = normal.x ? 'y' : 'x';
   const radius = (axis === 'x' ? node.w : node.h) / 2;
-  const usable = radius - Math.min(2, radius * 0.1);
+  const usable = radius - (node.kind === 'state' ? stateCorner(node) : Math.min(2, radius * 0.1));
   const step = Math.min(spacing, 2 * usable / (count - 1));
   const excursion = step * (count - 1) / 2;
   const middle = Math.max(node[axis] - usable + excursion, Math.min(node[axis] + usable - excursion, point[axis]));
@@ -260,7 +286,7 @@ function spreadPort(node, attachment, laneAxis, index, count, spacing) {
 
 function separatedPorts(flow, items, from, to, a, b, stroke) {
   const siblings = siblingFlows(flow, items);
-  if (siblings.length < 2 || !siblings.some(item => item.id === flow.id)) return [a, b];
+  if (from === to || siblings.length < 2 || !siblings.some(item => item.id === flow.id)) return [a, b];
   const forward = flow.from.node < flow.to.node;
   const first = forward ? from : to;
   const second = forward ? to : from;
@@ -278,7 +304,7 @@ function separatedPorts(flow, items, from, to, a, b, stroke) {
   }).sort((l, r) => l.bend - r.bend || l.id.localeCompare(r.id));
   return [[from, a], [to, b]].map(([node, attachment], end) => {
     if ((end === 0 ? flow.from : flow.to).anchor) return attachment;
-    const lanes = peers.filter(peer => node.kind === 'process' ||
+    const lanes = peers.filter(peer => isEllipse(node) ||
       (peer.ports[end].normal.x === attachment.normal.x && peer.ports[end].normal.y === attachment.normal.y));
     const index = lanes.findIndex(peer => peer.id === flow.id);
     const separated = spreadPort(node, attachment, axis, index, lanes.length, spacing);
@@ -439,8 +465,11 @@ export function setCurveControl(flow, items, point, stroke = 2) {
 }
 
 export function normalizeCurves(items, stroke = 2) {
-  return items.map(item => item.kind === 'flow' && item.control && !Number.isFinite(item.control.t)
-    ? setCurveControl(item, items, item.control, stroke) : item);
+  return items.map(item => {
+    if (item.kind !== 'flow') return item;
+    if (isStateLoop(item) && !item.control) return { ...item, ...stateLoop(item.from.node) };
+    return item.control && !Number.isFinite(item.control.t) ? setCurveControl(item, items, item.control, stroke) : item;
+  });
 }
 
 export function reverseFlow(flow, items) {
@@ -570,18 +599,21 @@ function curvedLabelPosition(control, geometry, stroke, box) {
   return { x: center.x + nx * gap, y: center.y + ny * gap, anchor: 'middle' };
 }
 
+function curveParameter(geometry, t, frame) {
+  const bend = difference(geometry.control, geometry.start);
+  const c = Math.max(0, Math.min(1, dot(bend, frame.axis) / frame.length));
+  // Solve for the curve parameter at this chord position.
+  return t / (c + Math.sqrt(Math.max(0, c * c + (1 - 2 * c) * t)));
+}
+
 function labelFrame(geometry, t, frame) {
   const { start, control } = geometry;
   const { axis, normal, length } = frame;
   const along = t * Math.max(1, length);
   let across = 0;
   if (control && length >= 1 && t > 0 && t < 1) {
-    const bend = difference(control, start);
-    const c = Math.max(0, Math.min(1, dot(bend, axis) / length));
-    // Solve t = 2c(1-u)u + u² for the curve parameter at this chord position.
-    const discriminant = Math.max(0, c * c + (1 - 2 * c) * t);
-    const u = t / (c + Math.sqrt(discriminant));
-    across = 2 * u * (1 - u) * dot(bend, normal);
+    const u = curveParameter(geometry, t, frame);
+    across = 2 * u * (1 - u) * dot(difference(control, start), normal);
   }
   return { x: start.x + axis.x * along + normal.x * across, y: start.y + axis.y * along + normal.y * across };
 }
@@ -593,7 +625,39 @@ export function flowLabelPosition(geometry, point) {
   return { t, offset: dot(difference(point, base), frame.normal) };
 }
 
+function transitionLabelPlacement(item, geometry, stroke, box) {
+  const { start, end, center, control } = geometry;
+  const frame = chordFrame(start, end);
+  const position = item.labelPosition;
+  if (position) {
+    const { t, offset } = position;
+    const base = labelFrame(geometry, t, frame);
+    let axis = frame.axis;
+    if (control && frame.length >= 1 && t > 0 && t < 1) {
+      const u = curveParameter(geometry, t, frame);
+      axis = unit({
+        x: (1 - u) * (control.x - start.x) + u * (end.x - control.x),
+        y: (1 - u) * (control.y - start.y) + u * (end.y - control.y),
+      });
+    }
+    return { x: base.x + frame.normal.x * offset, y: base.y + frame.normal.y * offset,
+      anchor: 'middle', angle: uprightAngle(axis) };
+  }
+  const { normal, axis } = frame;
+  const bend = control ? dot(difference(control, midpoint(start, end)), normal) : 0;
+  const side = Math.sign(bend) || (normal.y > 0 || (normal.y === 0 && normal.x < 0) ? -1 : 1);
+  const gap = box.height / 2 + 6 + stroke / 2;
+  return { x: center.x + normal.x * side * gap, y: center.y + normal.y * side * gap,
+    anchor: 'middle', angle: uprightAngle(axis) };
+}
+
+function uprightAngle(axis) {
+  const angle = Math.atan2(axis.y, axis.x) * 180 / Math.PI;
+  return angle > 90 ? angle - 180 : angle <= -90 ? angle + 180 : angle;
+}
+
 export function flowLabelPlacement(item, geometry, stroke, box) {
+  if (item.notation === 'sfd') return transitionLabelPlacement(item, geometry, stroke, box);
   const { start, end, center } = geometry;
   if (item.labelPosition) {
     const { t, offset } = item.labelPosition;
@@ -628,7 +692,7 @@ export function flowLabelPlacement(item, geometry, stroke, box) {
 }
 
 export function withCurve(flow, curved, items, stroke = 2) {
-  if (!curved) return { ...flow, control: null };
+  if (!curved) return isStateLoop(flow) ? flow : { ...flow, control: null };
   if (flow.control) return flow;
   const { start, end } = flowPorts(flow, items, true, stroke);
   const { length } = chordFrame(start, end);

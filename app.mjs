@@ -2,10 +2,10 @@ import {
   TYPES, FONTS, GRID_SIZE, sampleDiagram, arrowGeometry, flowLabelPosition, normalizeCurves, reverseFlow,
   curveControlRegion, pinAttachment, setCurveControl, snapEndpoint, withCurve, removeItems,
   alignShapes, distributeShapes, gridPoint, isDiagramShape, itemsInMarquee, marqueeBox, shortcutKey,
+  isStateLoop, isStateMarker, isStateShape, stateLoop,
 } from './diagram.mjs';
 import { icon } from './icons.mjs';
 import { svg, drawItem, drawItems, flowLabelCenter, imageBounds, normalizeFlowLabels, renderPng } from './drawing.mjs';
-import { renderWord } from './word.mjs';
 import { decodeFile, diagramFile, instantiateItems, MAX_FILE_BYTES, selectionFile } from './diagram-file.mjs';
 
 const $ = id => document.getElementById(id);
@@ -16,7 +16,9 @@ const curveDebugLayer = svg('g', { 'pointer-events': 'none', 'aria-hidden': 'tru
 canvas.insertBefore(curveDebugLayer, drawing);
 const surface = $('surface');
 const storageKey = 'diagrammer-document-v1';
-const tools = { select: { name: 'Select', shortcut: 'V' }, ...TYPES };
+const tools = { select: { name: 'Select', shortcut: 'V' }, ...TYPES, transition: { name: 'Transition', shortcut: 'A' } };
+const dfdTools = ['entity', 'process', 'store', 'flow'];
+const sfdTools = ['state', 'initial', 'final', 'transition'];
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
 let state = load();
@@ -81,9 +83,21 @@ for (const [kind, details] of Object.entries(tools)) {
     setTool(kind);
     canvas.focus({ preventScroll: true });
   });
-  $(kind === 'select' ? 'select-tool' : kind === 'text' ? 'text-tool' : 'shape-tools').append(button);
+  $(kind === 'select' || kind === 'text' ? kind + '-tool'
+    : dfdTools.includes(kind) ? 'dfd-symbols' : 'sfd-symbols').append(button);
 }
 for (const font of Object.keys(FONTS)) $('font').add(new Option(font));
+
+function openNotationTools() {
+  if ($('sfd-tools').open) return sfdTools;
+  return $('dfd-tools').open ? dfdTools : [];
+}
+
+for (const section of document.querySelectorAll('.notation-tools')) {
+  section.addEventListener('toggle', () => {
+    if (activeTool !== 'select' && activeTool !== 'text' && !openNotationTools().includes(activeTool)) setTool('select');
+  });
+}
 
 function itemById(id) {
   return state.items.find(item => item.id === id);
@@ -150,7 +164,7 @@ function paint() {
   $('counts').textContent = shapes + (shapes === 1 ? ' object' : ' objects') + ' · ' +
     flows + (flows === 1 ? ' flow' : ' flows');
   $('empty').hidden = state.items.length > 0 || activeTool !== 'select';
-  $('copy').disabled = $('download').disabled = $('word').disabled = !exportItems().length;
+  $('copy').disabled = $('download').disabled = !exportItems().length;
   $('save-selection').disabled = !selected.size;
   $('copy').querySelector('span').textContent = selected.size ? 'Copy selection' : 'Copy diagram';
   $('undo').disabled = past.length === 0;
@@ -169,7 +183,12 @@ function paint() {
 function paintTip() {
   const item = onlySelected();
   let tip = 'Drag empty canvas to select multiple elements';
-  if (activeTool === 'flow') tip = pending ? 'Click where the arrow should end.' : 'Click where the arrow should start.';
+  if (activeTool === 'flow' || activeTool === 'transition') {
+    tip = pending ? 'Click where the arrow should end.' : 'Click where the arrow should start.';
+    if (pending && activeTool === 'transition' && itemById(pending.from.node)?.kind === 'state') {
+      tip = 'Click where the transition should end. Click the same state for a self-loop.';
+    }
+  }
   else if (activeTool !== 'select') tip = 'Click the canvas to place ' + tools[activeTool].name.toLowerCase() + '.';
   else if (item?.kind === 'flow') {
     tip = item.control
@@ -180,7 +199,7 @@ function paintTip() {
     }
   }
   else if (!state.items.length) tip = 'Pick a tool to begin.';
-  else if (item && isDiagramShape(item)) tip = 'Shift-click to select more shapes · Double-click to edit a label';
+  else if (item && isDiagramShape(item) && !isStateMarker(item)) tip = 'Shift-click to select more shapes · Double-click to edit a label';
   if (pendingInsert) tip = 'Click the canvas to place the imported elements.';
   if (activeTool !== 'select' || pendingInsert) tip += ' <kbd>Esc</kbd> to cancel';
   $('tip').innerHTML = tip;
@@ -195,15 +214,18 @@ function paintSelection() {
   $('arrange').hidden = shapeCount < 2;
   $('distribute').hidden = shapeCount < 3;
   if (!selected.size) return;
-  $('selection-name').textContent = item ? TYPES[item.kind].name : selected.size + ' objects selected';
-  $('selection-icon').innerHTML = icon(item?.kind ?? 'shapes');
+  const kind = item?.notation === 'sfd' ? 'transition' : item?.kind;
+  $('selection-name').textContent = item ? tools[kind].name : selected.size + ' objects selected';
+  $('selection-icon').innerHTML = icon(kind ?? 'shapes');
   if (!item) return;
   keepValue('label', item.label);
   $('font').value = item.font;
   keepValue('font-size', item.size);
-  $('dimensions').hidden = item.kind === 'flow' || item.kind === 'text';
+  $('label-fields').hidden = isStateMarker(item);
+  $('dimensions').hidden = item.kind === 'flow' || item.kind === 'text' || isStateMarker(item);
   $('flow-fields').hidden = item.kind !== 'flow';
   if (item.kind === 'flow') {
+    $('straight').disabled = Boolean(isStateLoop(item));
     $('reset-label').hidden = !item.label || !(item.labelPosition || item.labelOffset);
     for (const [id, active] of [['straight', !item.control], ['curve', Boolean(item.control)]]) {
       $(id).classList.toggle('active', active);
@@ -276,7 +298,7 @@ function paintCanvas() {
     }
   }
   if (pending) {
-    const preview = drawItem({ kind: 'flow', from: pending.from, to: pending.to, label: '' }, state, true);
+    const preview = drawItem({ ...pending, label: '' }, state, true);
     preview.setAttribute('opacity', '0.6');
     preview.setAttribute('pointer-events', 'none');
     overlays.append(preview);
@@ -335,11 +357,23 @@ function sameEndpoint(a, b) {
   return a.node || b.node ? a.node === b.node : Math.hypot(a.x - b.x, a.y - b.y) < 8 / zoom;
 }
 
+const attachmentFilter = notation => notation === 'sfd' ? isStateShape
+  : item => isDiagramShape(item) && !isStateShape(item);
+
+function completeTransition(flow) {
+  if (!isStateLoop(flow)) return flow;
+  const defaults = stateLoop(flow.from.node);
+  return { ...flow, from: flow.from.anchor ? flow.from : defaults.from,
+    to: flow.to.anchor ? flow.to : defaults.to, control: flow.control ?? defaults.control };
+}
+
 function moveEndpoint(point, flow, handle, snapshot) {
   const other = handle === 'from' ? flow.to : flow.from;
-  if (sameEndpoint(snapEndpoint(point, snapshot.items), other)) return flow;
-  const target = snapEndpoint(point, snapshot.items, 14 / zoom, other.node);
-  if (sameEndpoint(target, other)) return flow;
+  const accept = attachmentFilter(flow.notation);
+  const canLoop = flow.notation === 'sfd' && snapshot.items.find(item => item.id === other.node)?.kind === 'state';
+  if (!canLoop && sameEndpoint(snapEndpoint(point, snapshot.items, 0, undefined, accept), other)) return flow;
+  const target = snapEndpoint(point, snapshot.items, 14 / zoom, canLoop ? undefined : other.node, accept);
+  if (sameEndpoint(target, other) && (!canLoop || !target.node)) return flow;
   const endpoint = target.node
     ? pinAttachment(snapshot.items.find(item => item.id === target.node), point, 9 / zoom)
     : target;
@@ -349,9 +383,12 @@ function moveEndpoint(point, flow, handle, snapshot) {
         ? original.anchor?.side === endpoint.anchor.side && original.anchor?.offset === endpoint.anchor.offset &&
           original.anchor?.angle === endpoint.anchor.angle
         : original.x === endpoint.x && original.y === endpoint.y)) return flow;
-  const updated = { ...flow, [handle]: endpoint };
-  return updated.control && updated.from.anchor && updated.to.anchor &&
-    arrowGeometry(updated, snapshot.items, snapshot.stroke).manualPortsAdjusted ? null : updated;
+  const updated = completeTransition({ ...flow, [handle]: endpoint });
+  if (updated.control && updated.from.anchor && updated.to.anchor) {
+    const { start, end, manualPortsAdjusted } = arrowGeometry(updated, snapshot.items, snapshot.stroke);
+    if (manualPortsAdjusted || (isStateLoop(updated) && Math.hypot(start.x - end.x, start.y - end.y) < 8 / zoom)) return null;
+  }
+  return updated;
 }
 
 function appendItem(kind, props) {
@@ -372,6 +409,7 @@ function insertItems(items, offset) {
 }
 
 function focusLabel() {
+  if (isStateMarker(onlySelected() ?? {})) return;
   $('label').focus();
   $('label').select();
 }
@@ -413,13 +451,16 @@ canvas.addEventListener('pointerdown', event => {
   }
   const item = itemById(event.target.closest('[data-item]')?.dataset.item);
   const handle = event.target.closest('[data-handle]')?.dataset.handle;
-  if (activeTool === 'flow') {
-    const target = snapEndpoint(point, state.items);
+  if (activeTool === 'flow' || activeTool === 'transition') {
+    const notation = activeTool === 'transition' ? 'sfd' : undefined;
+    const target = snapEndpoint(point, state.items, 0, undefined, attachmentFilter(notation));
     if (!pending) {
-      pending = { from: target, to: target };
+      pending = { kind: 'flow', notation, from: target, to: target };
       paint();
+    } else if (notation === 'sfd' && pending.from.node === target.node && itemById(target.node)?.kind === 'state') {
+      appendItem('flow', { notation, ...stateLoop(target.node), size: 14 });
     } else if (!sameEndpoint(pending.from, target)) {
-      appendItem('flow', { from: pending.from, to: target, control: null, size: 14 });
+      appendItem('flow', { notation, from: pending.from, to: target, control: null, size: 14 });
     }
     return;
   }
@@ -470,7 +511,9 @@ canvas.addEventListener('pointermove', event => {
   const point = location(event);
   if (!drag) {
     if (pending) {
-      pending.to = snapEndpoint(point, state.items);
+      const target = snapEndpoint(point, state.items, 0, undefined, attachmentFilter(pending.notation));
+      pending = { kind: 'flow', notation: pending.notation, from: pending.from, to: target };
+      if (isStateLoop(pending) && itemById(target.node)?.kind === 'state') pending.control = stateLoop(target.node).control;
       paintCanvas();
     }
     return;
@@ -723,30 +766,25 @@ async function copyImage() {
     // Keep the write in the click or key activation, including in Safari.
     const png = renderPng(state, items);
     await Promise.all([navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]), png]);
-    toast(selected.size ? 'Selection copied. Paste it into Word.' : 'Diagram copied. Paste it into Word.', true);
+    toast(selected.size ? 'Selection copied as PNG.' : 'Diagram copied as PNG.', true);
   } catch {
     toast('Clipboard write failed. Use PNG to download.');
   }
 }
 
-async function downloadDiagram(format) {
+async function downloadDiagram() {
   const items = exportItems();
   if (!items.length) return;
-  const word = format === 'docx';
   try {
-    const blob = word
-      ? renderWord(state, items, { landscape: $('word-page').value === 'landscape' })
-      : await renderPng(state, items);
-    downloadFile(blob, format);
-    toast(word ? 'Editable Word document downloaded.' : 'PNG downloaded.', true);
+    downloadFile(await renderPng(state, items), 'png');
+    toast('PNG downloaded.', true);
   } catch {
-    toast(word ? 'Could not create the Word document.' : 'Could not create the PNG.');
+    toast('Could not create the PNG.');
   }
 }
 
 $('copy').addEventListener('click', copyImage);
-$('download').addEventListener('click', () => downloadDiagram('png'));
-$('word').addEventListener('click', () => downloadDiagram('docx'));
+$('download').addEventListener('click', downloadDiagram);
 
 function isTextEditor(target) {
   return target instanceof Element &&
@@ -832,7 +870,7 @@ document.addEventListener('keydown', event => {
       event.preventDefault();
       spaceDown = true;
     } else {
-      const tool = Object.keys(tools).find(kind => tools[kind].shortcut.toLowerCase() === key);
+      const tool = ['select', 'text', ...openNotationTools()].find(kind => tools[kind].shortcut.toLowerCase() === key);
       if (tool) {
         event.preventDefault();
         if (!event.repeat) setTool(tool);

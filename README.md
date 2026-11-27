@@ -1,6 +1,6 @@
 # Diagrammer
 
-A dependency-free browser editor for outline-only data flow diagrams.
+A dependency-free browser editor for data flow diagrams and state flow diagrams.
 
 [Open Diagrammer](https://teoalivanoglou.github.io/diagrammer/)
 
@@ -29,10 +29,15 @@ Open http://127.0.0.1:4173/ in a current browser. The app starts with a Greek-la
 - Double-click a shape or flow to edit its label. Labels inside shapes wrap as you resize the shape and keep any line breaks you enter. Use the **Text** tool for standalone notes. All four font options support Greek.
 - Curved arrow labels start outside the bend and follow it when shapes move. Drag a label to anchor it elsewhere along the arrow. The stroke leaves a tight transparent gap behind each overlapping word. Use **Reset label position** to return to automatic placement.
 - Change **Line thickness** under Diagram to update every outline and arrow. Hold Shift while selecting items to copy them together, or deselect everything to copy the full diagram.
-- Choose **Word** to download an editable .docx with your selection or the full diagram. The default is A4 portrait. Choose A4 landscape under **Files → Word page** for wide diagrams. Open the file in desktop Word and select the diagram, then click an individual shape or label to edit it. Copy the group from Word to move the editable diagram into another Word document. Arrow connections follow shapes in the browser editor.
 - Choose **Copy selection** or **Copy diagram** for quick image paste. The clipboard carries a transparent PNG with the labels rendered into the image. The **PNG** button downloads the same image.
 - Use **Ctrl+C / Ctrl+V** (or **Cmd+C / Cmd+V** on Mac) to copy and paste editable elements. Point at the canvas to paste at that location.
 - Use **Fit diagram** to bring everything into view. Hold Space while dragging with the canvas focused to pan, or use a trackpad.
+
+## State flow diagrams
+
+Open **SFD** in the Toolbox to use rounded states, start dots, end markers, and transitions. The open section determines the diagram-specific shortcuts. **A** creates a data flow in DFD and a transition in SFD.
+
+Click a start point and an end point with the Transition tool. Click the same state twice to make a self-loop. Enter the event and optional response in the label field, using a slash or a line break as needed. Straight labels run parallel to the arrow. Curve labels follow the midpoint tangent and sit off the arrow along its normal. Drag a label to move it.
 
 ## Curve debugging
 

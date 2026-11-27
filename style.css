@@ -59,6 +59,16 @@ h1, h2, h3, p { margin: 0; }
 .side-heading h2, .canvas-name h1 { font-size: 15px; font-weight: 700; }
 .tool-body { padding: 16px 12px; }
 .tool-body h3 { margin: 22px 7px 9px; }
+.notation-tools { margin-top: 12px; }
+.notation-tools summary {
+  color: #657087;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 740;
+  letter-spacing: .06em;
+  padding: 6px 7px;
+}
+.notation-tools[open] summary { color: #4c36c0; }
 h3 { color: #657087; font-size: 12px; font-weight: 740; text-transform: uppercase; letter-spacing: .085em; }
 .tool-list { display: grid; gap: 4px; }
 .tool {
@@ -93,7 +103,6 @@ kbd { font: 11px ui-monospace, monospace; display: inline-grid; place-items: cen
 .editor-bar { min-height: 57px; padding: 0 16px 0 18px; border-bottom: 1px solid var(--border); gap: 8px; }
 .canvas-name, .editor-actions { display: flex; align-items: center; gap: 8px; }
 .canvas-name > span:first-child { color: var(--muted); }
-.dfd-tag { border: 1px solid #e3e0f6; background: #f3f0fd; color: #5c49ac; border-radius: 4px; padding: 2px 5px; font-size: 11px; font-weight: 750; letter-spacing: .06em; }
 .editor-actions { gap: 3px; }
 .icon-btn, .zoom-label { display: inline-grid; place-items: center; height: 32px; min-width: 30px; padding: 0 4px; border: 0; border-radius: 5px; background: transparent; color: #4e5b73; }
 .icon-btn svg { width: 18px; height: 18px; }
@@ -175,6 +184,10 @@ textarea { display: block; min-height: 69px; resize: vertical; }
   .tools .side-heading h2, .tool-body h3, .tool span, .tool kbd { display: none; }
   .tool { padding: 0; justify-content: center; }
   .tool-body { display: grid; gap: 13px; }
+  .notation-tools { margin-top: 0; }
+  .notation-tools summary { padding-inline: 0; text-align: center; font-size: 10px; letter-spacing: 0; list-style: none; }
+  .notation-tools summary::-webkit-details-marker { display: none; }
+  .notation-tools[open] summary { background: var(--accent-light); border-radius: 4px; }
   .file-actions { margin-inline: 6px; }
   .new-button { font-size: 0; gap: 0; padding: 0; }
   #files summary { font-size: 0; gap: 0; padding: 0; }
@@ -203,7 +216,7 @@ textarea { display: block; min-height: 69px; resize: vertical; }
   .inspector .side-heading, .inspector-footer { grid-column: 1 / -1; }
   .settings { border: 0; }
   .canvas-name { gap: 5px; }
-  .canvas-name > span:first-child, .dfd-tag { display: none; }
+  .canvas-name > span:first-child { display: none; }
   .editor-bar { padding-inline: 9px 4px; }
   .editor-actions { gap: 0; }
   .icon-btn { min-width: 26px; }

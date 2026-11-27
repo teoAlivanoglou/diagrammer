@@ -1,4 +1,4 @@
-import { arrowGeometry, FONTS, isDiagramShape, normalizeCurves, setCurveControl, TYPES } from './diagram.mjs';
+import { arrowGeometry, FONTS, isDiagramShape, isStateMarker, normalizeCurves, setCurveControl, TYPES } from './diagram.mjs';
 
 const marker = { format: 'diagrammer', version: 3 };
 export const MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -29,10 +29,10 @@ const isEndpoint = value => typeof value?.node === 'string'
   : isPoint(value);
 const isControl = value => value && (Object.hasOwn(value, 't')
   ? between(value.t, 0, 1) && between(value.offset, -5e7, 5e7) : isPoint(value));
-const isAnchor = (anchor, node) => anchor == null || (node.kind === 'process'
+const isAnchor = (anchor, node) => anchor == null || (node.kind === 'process' || isStateMarker(node)
   ? between(anchor.angle, -Math.PI, Math.PI)
   : between(anchor.offset, -1, 1) && (anchor.side === 'top' || anchor.side === 'bottom' ||
-    (node.kind === 'entity' && (anchor.side === 'left' || anchor.side === 'right'))));
+    (node.kind !== 'store' && (anchor.side === 'left' || anchor.side === 'right'))));
 
 function validateItems(items) {
   if (!Array.isArray(items) || items.length > 10000) throw new Error('Invalid diagram elements.');
@@ -47,6 +47,7 @@ function validateItems(items) {
     seen.add(item.id);
     if (item.kind === 'flow') {
       if (!isEndpoint(item.from) || !isEndpoint(item.to) ||
+        (item.notation != null && item.notation !== 'sfd') ||
         (item.control != null && !isControl(item.control)) ||
         (item.labelPosition != null && (!between(item.labelPosition.t, -1e8, 1e8) ||
           !between(item.labelPosition.offset, -5e7, 5e7))) ||
@@ -65,6 +66,8 @@ function validateItems(items) {
     if (item.kind === 'flow' && [item.from, item.to].some(end => end.node && !isAnchor(end.anchor, nodes.get(end.node)))) {
       throw new Error('Diagram contains an invalid anchor position.');
     }
+    if (item.kind === 'flow' && item.notation === 'sfd' && item.from.node && item.from.node === item.to.node &&
+        nodes.get(item.from.node).kind !== 'state') throw new Error('A self-transition must attach to a state.');
   }
 }
 
