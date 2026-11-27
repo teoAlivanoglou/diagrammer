@@ -40,7 +40,7 @@ export function wrapLabel(text, width, measure) {
   return lines;
 }
 
-function labelInkBounds(lines, leading) {
+export function labelInkBounds(lines, leading) {
   let top = Infinity;
   let bottom = -Infinity;
   let width = 0;
@@ -76,6 +76,7 @@ export function measureLabel(item, context) {
     return {
       text, left: measured.actualBoundingBoxLeft, right: measured.actualBoundingBoxRight,
       ascent: measured.actualBoundingBoxAscent, descent: measured.actualBoundingBoxDescent,
+      advance: measured.width, fontAscent: measured.fontBoundingBoxAscent, fontDescent: measured.fontBoundingBoxDescent,
     };
   });
 }

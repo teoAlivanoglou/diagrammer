@@ -204,3 +204,12 @@ test('Word keeps text fields on unlabeled shapes and excludes unselected shapes'
   assert.match(document, /<wps:txbx>/);
   assert.doesNotMatch(document, /Αποθήκη|<a:quadBezTo>/);
 });
+
+test('Word export uses an explicit A4 page orientation and centers the drawing', async () => {
+  const sample = sampleDiagram();
+  const portrait = await renderWord(sample, sample.items).text();
+  const landscape = await renderWord(sample, sample.items, { landscape: true }).text();
+  assert.match(portrait, /<w:pgSz w:w="11906" w:h="16838"\/>/);
+  assert.match(landscape, /<w:pgSz w:w="16838" w:h="11906" w:orient="landscape"\/>/);
+  assert.match(portrait, /<wp:positionH relativeFrom="margin"><wp:align>center<\/wp:align>/);
+});

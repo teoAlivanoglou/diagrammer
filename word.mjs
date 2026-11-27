@@ -1,5 +1,5 @@
 import { arrowGeometry, FONTS, flowLabelPlacement, TYPES, visibleFlow } from './diagram.mjs';
-import { flowLabelBox, INK, labelInkSize, measureLabel } from './drawing.mjs';
+import { flowLabelBox, INK, labelInkBounds, labelInkSize, measureLabel } from './drawing.mjs';
 
 const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
@@ -64,22 +64,36 @@ function customGeometry(box, commands) {
     '" fill="none" extrusionOk="0">' + path + '</a:path></a:pathLst></a:custGeom>';
 }
 
-function textGeometry(item, alignment, scale) {
+function textGeometry(item, alignment, scale, metrics) {
   const font = escaped(Object.hasOwn(FONTS, item.font) ? item.font : 'Arial');
   const size = Math.max(2, Math.round(item.size * scale * 1.5)); // Word font sizes are half-points.
-  const leading = Math.max(1, Math.round(item.size * scale * 15 * 1.22)); // Twips.
+  const lineHeight = item.size * 1.22;
+  const leading = Math.max(1, Math.round(lineHeight * scale * 15)); // Twips.
+  const content = item.label.split('\n');
+  const lines = metrics && item.label ? measureLabel(item, metrics) : [];
+  const { top, bottom } = labelInkBounds(lines, lineHeight);
+  const fontLine = lines.find(line => line.text.trim());
+  const opticalY = fontLine && Number.isFinite(fontLine.fontAscent) && Number.isFinite(fontLine.fontDescent)
+    ? (fontLine.fontAscent - fontLine.fontDescent + top + bottom - (lines.length - 1) * lineHeight) / 2 : 0;
+  const rise = Math.round(Math.max(-item.size / 4, Math.min(item.size / 4, opticalY)) * scale * 1.5);
   const formatting = '<w:rFonts w:ascii="' + font + '" w:hAnsi="' + font + '" w:cs="' + font + '"/>' +
     '<w:color w:val="' + COLOR + '"/><w:sz w:val="' + size + '"/><w:szCs w:val="' + size + '"/>';
-  const paragraphs = item.label.split('\n').map(content =>
-    '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="' +
-    leading + '" w:lineRule="exact"/><w:jc w:val="' + alignment + '"/><w:rPr>' +
-    formatting + '</w:rPr></w:pPr><w:r><w:rPr>' + formatting +
-    '</w:rPr><w:t xml:space="preserve">' + escaped(content) + '</w:t></w:r></w:p>',
-  );
+  const paragraphs = content.map((text, index) => {
+    const line = lines.length === content.length ? lines[index] : null;
+    const twips = value => Math.round(Math.max(-item.size / 2, Math.min(item.size / 2, value)) * scale * 15);
+    const left = line?.text === text ? twips(alignment === 'center'
+      ? line.advance + line.left - line.right : alignment === 'left' ? line.left : 0) : 0;
+    const right = line?.text === text && alignment === 'right' ? twips(line.right - line.advance) : 0;
+    return '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="' +
+      leading + '" w:lineRule="exact"/>' + (left || right ? '<w:ind w:left="' + left + '" w:right="' + right + '"/>' : '') +
+      '<w:jc w:val="' + alignment + '"/><w:rPr>' + formatting +
+      '</w:rPr></w:pPr><w:r><w:rPr>' + (rise ? '<w:position w:val="' + rise + '"/>' : '') + formatting +
+      '</w:rPr><w:t xml:space="preserve">' + escaped(text) + '</w:t></w:r></w:p>';
+  });
   return '<wps:txbx><w:txbxContent>' + paragraphs.join('') + '</w:txbxContent></wps:txbx>';
 }
 
-function wordShape(drawing, id, canvas, scale, stroke) {
+function wordShape(drawing, id, canvas, scale, stroke, metrics) {
   const { box, name, geometry, item, alignment = 'center', textBox = false } = drawing;
   const outline = textBox ? '<a:ln><a:noFill/></a:ln>' :
     '<a:ln w="' + Math.min(20116800, toExtent(stroke * scale)) + '" cap="rnd">' +
@@ -91,7 +105,7 @@ function wordShape(drawing, id, canvas, scale, stroke) {
   return '<wps:wsp><wps:cNvPr id="' + id + '" name="' + escaped(name) + '"/>' +
     '<wps:cNvSpPr' + (textBox ? ' txBox="1"' : '') + '/><wps:spPr>' +
     '<a:xfrm>' + offset + extent + '</a:xfrm>' + geometry + '<a:noFill/>' + outline +
-    '</wps:spPr>' + (item ? textGeometry(item, alignment, scale) : '') +
+    '</wps:spPr>' + (item ? textGeometry(item, alignment, scale, metrics) : '') +
     '<wps:bodyPr wrap="square" anchor="ctr" lIns="0" tIns="0" rIns="0" bIns="0">' +
     '<a:noAutofit/></wps:bodyPr></wps:wsp>';
 }
@@ -138,7 +152,7 @@ function nodeDrawing(item, metrics) {
   }
 }
 
-function mainDocument(state, items) {
+function mainDocument(state, items, landscape) {
   const metrics = globalThis.document?.createElement('canvas').getContext('2d');
   const drawings = [
     ...items.filter(item => item.kind === 'flow').flatMap(item => flowDrawing(item, state, metrics)),
@@ -147,20 +161,20 @@ function mainDocument(state, items) {
   ];
   const boxes = drawings.map(drawing => drawing.box);
   const canvas = boxes.length ? bounds(boxes, 4 + state.stroke / 2) : bounds([point(0, 0)]);
-  const landscape = canvas.width > canvas.height;
   const pageWidth = landscape ? PAGE.height : PAGE.width;
   const pageHeight = landscape ? PAGE.width : PAGE.height;
   const availableWidth = (pageWidth - 2 * PAGE.margin) * EMU_PER_TWIP;
-  const availableHeight = (pageHeight - 2 * PAGE.margin - 20) * EMU_PER_TWIP;
+  const availableHeight = (pageHeight - 2 * PAGE.margin - 160) * EMU_PER_TWIP;
   const scale = Math.min(1, availableWidth / toExtent(canvas.width), availableHeight / toExtent(canvas.height));
   const cx = toExtent(canvas.width * scale);
   const cy = toExtent(canvas.height * scale);
-  const shapes = drawings.map((drawing, index) => wordShape(drawing, index + 2, canvas, scale, state.stroke));
+  const shapes = drawings.map((drawing, index) => wordShape(drawing, index + 2, canvas, scale, state.stroke, metrics));
   const title = escaped(state.title?.trim() || 'Diagram');
-  const drawing = '<w:p><w:r><mc:AlternateContent><mc:Choice Requires="wpg"><w:drawing>' +
+  const drawing = '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/></w:pPr>' +
+    '<w:r><mc:AlternateContent><mc:Choice Requires="wpg"><w:drawing>' +
     '<wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" ' +
     'behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">' +
-    '<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="margin"><wp:posOffset>0</wp:posOffset></wp:positionH>' +
+    '<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="margin"><wp:align>center</wp:align></wp:positionH>' +
     '<wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>' +
     '<wp:extent cx="' + cx + '" cy="' + cy + '"/><wp:effectExtent l="0" t="0" r="0" b="0"/>' +
     '<wp:wrapTopAndBottom/><wp:docPr id="1" name="' + title + '"/><wp:cNvGraphicFramePr/>' +
@@ -248,7 +262,7 @@ function relationship(type, target) {
     '" Target="' + target + '"/></Relationships>';
 }
 
-export function renderWord(state, items) {
+export function renderWord(state, items, { landscape = false } = {}) {
   return zip([
     ['[Content_Types].xml', XML + '<Types xmlns="' + PACKAGE + 'content-types">' +
       '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
@@ -257,7 +271,7 @@ export function renderWord(state, items) {
       '<Override PartName="/word/settings.xml" ' +
       'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/></Types>'],
     ['_rels/.rels', relationship('officeDocument', 'word/document.xml')],
-    ['word/document.xml', mainDocument(state, items)],
+    ['word/document.xml', mainDocument(state, items, landscape)],
     ['word/_rels/document.xml.rels', relationship('settings', 'settings.xml')],
     ['word/settings.xml', XML + '<w:settings xmlns:w="' + MAIN + '"><w:compat>' +
       '<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/>' +

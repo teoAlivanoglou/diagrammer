@@ -684,7 +684,9 @@ async function downloadDiagram(format) {
   if (!items.length) return;
   const word = format === 'docx';
   try {
-    const blob = word ? await renderWord(state, items) : await renderPng(state, items);
+    const blob = word
+      ? renderWord(state, items, { landscape: $('word-page').value === 'landscape' })
+      : await renderPng(state, items);
     downloadFile(blob, format);
     toast(word ? 'Editable Word document downloaded.' : 'PNG downloaded.', true);
   } catch {
