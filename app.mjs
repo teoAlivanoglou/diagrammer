@@ -1,5 +1,6 @@
 import {
-  TYPES, FONTS, GRID_SIZE, sampleDiagram, arrowGeometry, snapEndpoint, withCurve, removeItems,
+  TYPES, FONTS, GRID_SIZE, sampleDiagram, arrowGeometry, normalizeCurves, reverseFlow,
+  setCurveControl, snapEndpoint, withCurve, removeItems,
   alignShapes, distributeShapes, gridPoint, isDiagramShape, itemsInMarquee, marqueeBox, shortcutKey,
 } from './diagram.mjs';
 import { icon } from './icons.mjs';
@@ -37,7 +38,9 @@ let followFit = true;
 function load() {
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey));
-    if (saved && Array.isArray(saved.items) && Number.isFinite(saved.stroke)) return saved;
+    if (saved && Array.isArray(saved.items) && Number.isFinite(saved.stroke)) {
+      return { ...saved, items: normalizeCurves(saved.items) };
+    }
   } catch { /* Use the example when local storage is unavailable. */ }
   return sampleDiagram();
 }
@@ -212,14 +215,14 @@ function paintCanvas() {
       if (target) drawing.querySelector('[data-item="' + CSS.escape(target) + '"]')?.classList.add('snap-target');
     }
     const g = arrowGeometry(item, state.items, state.stroke);
-    if (item.control) {
+    if (g.control) {
       overlays.append(svg('path', {
-        d: 'M ' + g.start.x + ' ' + g.start.y + ' L ' + item.control.x + ' ' + item.control.y + ' L ' + g.end.x + ' ' + g.end.y,
+        d: 'M ' + g.start.x + ' ' + g.start.y + ' L ' + g.control.x + ' ' + g.control.y + ' L ' + g.end.x + ' ' + g.end.y,
         fill: 'none', stroke: '#967fe8', 'stroke-width': 1 / zoom,
         'stroke-dasharray': 4 / zoom + ' ' + 4 / zoom, 'pointer-events': 'none',
       }));
       overlays.append(svg('rect', {
-        x: item.control.x - 5 / zoom, y: item.control.y - 5 / zoom,
+        x: g.control.x - 5 / zoom, y: g.control.y - 5 / zoom,
         width: 10 / zoom, height: 10 / zoom, rx: 2 / zoom,
         fill: '#7057e5', stroke: 'white', 'stroke-width': 1.5 / zoom, 'data-handle': 'control',
       }, svg('title', {}, 'Drag to bend the arrow')));
@@ -457,18 +460,13 @@ canvas.addEventListener('pointermove', event => {
     }
     if (drag.type === 'handle') {
       if (item.id !== drag.id) return item;
-      const value = drag.handle === 'control' ? move(item.control) : snapDraggedEndpoint(point, item, drag.handle);
-      return { ...item, [drag.handle]: value };
+      if (drag.handle === 'control') return setCurveControl(item, drag.snapshot.items, point);
+      return { ...item, [drag.handle]: snapDraggedEndpoint(point, item, drag.handle) };
     }
     if (!selected.has(item.id)) return item;
     if (item.kind !== 'flow') return { ...item, ...move(item) };
-    if (item.from.node || item.to.node) {
-      if (item.control && selected.has(item.from.node) && selected.has(item.to.node)) {
-        return { ...item, control: move(item.control) };
-      }
-      return item;
-    }
-    return { ...item, from: move(item.from), to: move(item.to), control: item.control ? move(item.control) : null };
+    if (item.from.node || item.to.node) return item;
+    return { ...item, from: move(item.from), to: move(item.to) };
   });
   state = { ...drag.snapshot, items };
   paintCanvas();
@@ -561,7 +559,7 @@ for (const button of document.querySelectorAll('[data-space]')) {
 }
 $('straight').addEventListener('click', () => updateItem(onlySelected(), item => withCurve(item, false, state.items)));
 $('curve').addEventListener('click', () => updateItem(onlySelected(), item => withCurve(item, true, state.items)));
-$('reverse').addEventListener('click', () => updateItem(onlySelected(), item => ({ ...item, from: item.to, to: item.from })));
+$('reverse').addEventListener('click', () => updateItem(onlySelected(), item => reverseFlow(item, state.items)));
 $('reset-label').addEventListener('click', () => updateItem(onlySelected(), { labelOffset: null }));
 $('font').addEventListener('change', event => {
   updateItem(onlySelected(), { font: event.target.value });

@@ -129,12 +129,58 @@ function boundary(point, toward) {
   return { x: point.x + dx * factor, y: point.y + dy * factor };
 }
 
-export function arrowGeometry(flow, items, stroke) {
+function flowPorts(flow, items) {
   const from = endpointPosition(flow.from, items);
   const to = endpointPosition(flow.to, items);
-  const control = flow.control;
-  const start = boundary(from, control ?? to);
-  const end = boundary(to, control ?? from);
+  return { start: boundary(from, to), end: boundary(to, from) };
+}
+
+const dot = (a, b) => a.x * b.x + a.y * b.y;
+const difference = (a, b) => ({ x: a.x - b.x, y: a.y - b.y });
+
+function chordFrame(start, end) {
+  const chord = difference(end, start);
+  const length = Math.hypot(chord.x, chord.y);
+  const axis = length ? { x: chord.x / length, y: chord.y / length } : { x: 1, y: 0 };
+  return { length, axis, normal: { x: -axis.y, y: axis.x } };
+}
+
+function relativeControl(point, start, end) {
+  const { length, axis, normal } = chordFrame(start, end);
+  const delta = difference(point, start);
+  return { t: length ? Math.max(0, Math.min(1, dot(delta, axis) / length)) : 0.5,
+    offset: dot(delta, normal) };
+}
+
+export function setCurveControl(flow, items, point) {
+  const { start, end } = flowPorts(flow, items);
+  return { ...flow, control: relativeControl(point, start, end) };
+}
+
+export function normalizeCurves(items) {
+  return items.map(item => item.kind === 'flow' && item.control && !Number.isFinite(item.control.t)
+    ? setCurveControl(item, items, item.control) : item);
+}
+
+export function reverseFlow(flow, items) {
+  const { control } = flow.control && !Number.isFinite(flow.control.t)
+    ? setCurveControl(flow, items, flow.control) : flow;
+  return { ...flow, from: flow.to, to: flow.from,
+    control: control ? { t: 1 - control.t, offset: -control.offset } : null };
+}
+
+export function arrowGeometry(flow, items, stroke) {
+  const { start, end } = flowPorts(flow, items);
+  let control = null;
+  if (flow.control) {
+    const { t, offset } = Number.isFinite(flow.control.t)
+      ? flow.control : relativeControl(flow.control, start, end);
+    const { normal } = chordFrame(start, end);
+    control = {
+      x: start.x + (end.x - start.x) * t + normal.x * offset,
+      y: start.y + (end.y - start.y) * t + normal.y * offset,
+    };
+  }
   const middle = midpoint(start, end);
   const center = control ? midpoint(middle, control) : middle;
   const tangent = control ?? start;
@@ -147,7 +193,7 @@ export function arrowGeometry(flow, items, stroke) {
   const path = 'M ' + start.x + ' ' + start.y + (control
     ? ' Q ' + control.x + ' ' + control.y + ' '
     : ' L ') + end.x + ' ' + end.y;
-  return { start, end, center, wings, path };
+  return { start, end, control, center, wings, path };
 }
 
 function curvedLabelPosition(control, geometry, stroke, box) {
@@ -177,7 +223,7 @@ export function flowLabelPlacement(item, geometry, stroke, box) {
   const { start, end, center } = geometry;
   let placement;
   if (item.control) {
-    placement = curvedLabelPosition(item.control, geometry, stroke, box);
+    placement = curvedLabelPosition(geometry.control, geometry, stroke, box);
   } else if (Math.abs(end.y - start.y) > Math.abs(end.x - start.x)) {
     placement = { x: center.x + 10, y: center.y, anchor: 'start' };
   } else {
@@ -194,17 +240,9 @@ export function flowLabelPlacement(item, geometry, stroke, box) {
 export function withCurve(flow, curved, items) {
   if (!curved) return { ...flow, control: null };
   if (flow.control) return flow;
-  const from = endpointPosition(flow.from, items);
-  const to = endpointPosition(flow.to, items);
-  const center = midpoint(from, to);
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const length = Math.hypot(dx, dy) || 1;
-  const bend = Math.min(105, Math.max(55, length * 0.38));
-  return {
-    ...flow,
-    control: { x: center.x + dy / length * bend, y: center.y - dx / length * bend },
-  };
+  const { start, end } = flowPorts(flow, items);
+  const { length } = chordFrame(start, end);
+  return { ...flow, control: { t: 0.5, offset: -Math.min(105, Math.max(55, length * 0.38)) } };
 }
 
 export function removeItems(items, ids) {
@@ -224,7 +262,7 @@ export function sampleDiagram() {
   return {
     title: 'Order processing',
     stroke: 2,
-    items: [
+    items: normalizeCurves([
       label('customer', 'entity', -267, -67, 'Πελάτης'),
       label('order', 'process', 0, -67, '1.0\nΕπεξεργασία\nπαραγγελίας', { w: 152, h: 152 }),
       label('warehouse', 'entity', 267, -67, 'Αποθήκη'),
@@ -233,6 +271,6 @@ export function sampleDiagram() {
       flow('dispatch', 'order', 'warehouse', 'Εντολή αποστολής', { x: 140, y: -143 }),
       flow('record', 'order', 'records', 'Στοιχεία', { x: -78, y: 58 }),
       flow('status', 'records', 'order', 'Κατάσταση', { x: 84, y: 62 }),
-    ],
+    ]),
   };
 }

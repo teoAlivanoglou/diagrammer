@@ -98,9 +98,9 @@ function wordShape(drawing, id, canvas, scale, stroke) {
 
 function flowDrawing(item, state, metrics) {
   const geometry = arrowGeometry(item, state.items, state.stroke);
-  const { start, end, wings } = geometry;
-  const box = bounds([start, end, ...wings, ...(item.control ? [item.control] : [])]);
-  const segment = item.control ? { tag: 'quadBezTo', points: [item.control, end] } : line(end);
+  const { start, end, control, wings } = geometry;
+  const box = bounds([start, end, ...wings, ...(control ? [control] : [])]);
+  const segment = control ? { tag: 'quadBezTo', points: [control, end] } : line(end);
   const path = [move(start), segment, move(wings[0]), line(end), line(wings[1])];
   const drawing = [{ box, name: TYPES.flow.name, geometry: customGeometry(box, path) }];
   if (item.label) {

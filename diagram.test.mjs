@@ -72,6 +72,14 @@ test('curves use one control point, and straightening removes it', () => {
   assert.equal(withCurve(curved, false, items).control, null);
 });
 
+test('a curve keeps its fractional position and perpendicular offset when an endpoint moves', () => {
+  const item = { ...flow, control: { t: 0.25, offset: -40 } };
+  const old = arrowGeometry(item, [left, right], 2);
+  const moved = arrowGeometry(item, [left, { ...right, x: 300 }], 2);
+  assert.deepEqual(old.control, { x: 75, y: -40 });
+  assert.deepEqual(moved.control, { x: 100, y: -40 });
+});
+
 test('curved labels keep their full ink box beyond the outside tangent', () => {
   const item = {
     from: { x: 0, y: 0 }, to: { x: 150, y: 100 },

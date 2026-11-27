@@ -21,15 +21,26 @@ test('a selection detaches omitted nodes at the rendered arrow endpoint and rema
   const [shape, arrow] = instantiateItems(file.items, { x: 4, y: 8 }, () => 'copy-' + id++);
   assert.equal(arrow.from.node, shape.id);
   assert.deepEqual(arrow.to, { x: flow.to.x + 4, y: flow.to.y + 8 });
-  assert.deepEqual(arrow.control, { x: flow.control.x + 4, y: flow.control.y + 8 });
+  assert.deepEqual(arrow.control, flow.control);
 });
 
 test('the decoder rejects duplicate IDs, dangling attachments, and future versions', () => {
   const diagram = sampleDiagram();
-  assert.throws(() => roundTrip({ ...diagramFile(diagram), version: 2 }), /version/);
+  assert.throws(() => roundTrip({ ...diagramFile(diagram), version: 999 }), /version/);
   const file = diagramFile(diagram);
   file.diagram.items[0].id = file.diagram.items[1].id;
   assert.throws(() => roundTrip(file), /duplicate/);
   file.diagram.items.shift();
   assert.throws(() => roundTrip(file), /attachment/);
+});
+
+test('legacy absolute controls are upgraded to relative coordinates', () => {
+  const sample = sampleDiagram();
+  const flow = sample.items.find(item => item.id === 'dispatch');
+  flow.control = { x: 140, y: -143 };
+  const { diagram } = roundTrip({ ...diagramFile(sample), version: 1 });
+  const upgraded = diagram.items.find(item => item.id === flow.id);
+  assert.ok(upgraded.control.t >= 0 && upgraded.control.t <= 1);
+  assert.ok(Number.isFinite(upgraded.control.offset));
+  assert.deepEqual(arrowGeometry(upgraded, diagram.items, 2).control, arrowGeometry(flow, sample.items, 2).control);
 });
