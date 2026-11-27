@@ -40,6 +40,8 @@ Open **SFD** in the Toolbox to use rounded states, start dots, end markers, and 
 
 Click a start point and an end point with the Transition tool. Click the same state twice to make a self-loop. Enter the event and optional response in the label field, using a slash or a line break as needed. Straight labels run parallel to the arrow. Curve labels follow the midpoint tangent and sit off the arrow along its normal. Drag a label to move it.
 
+For opposing transitions, select a label’s arrow and use **Swap label side** to move the label across it. **Rotate label 180°** reverses the reading direction independently. **Reset label layout** restores automatic placement and rotation.
+
 Start and end dots use automatic attachment. The transition follows the dot center for positioning and meets the visible rim. Drag away from a dot to detach.
 
 ## Curve debugging

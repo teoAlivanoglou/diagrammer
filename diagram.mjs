@@ -711,6 +711,7 @@ function transitionLabelPlacement(item, geometry, stroke, box) {
   const { start, end, center, control } = geometry;
   const frame = chordFrame(start, end);
   const position = item.labelPosition;
+  const rotation = item.labelUpsideDown ? 180 : 0;
   if (position) {
     const { t, offset } = position;
     const base = labelFrame(geometry, t, frame);
@@ -723,14 +724,20 @@ function transitionLabelPlacement(item, geometry, stroke, box) {
       });
     }
     return { x: base.x + frame.normal.x * offset, y: base.y + frame.normal.y * offset,
-      anchor: 'middle', angle: uprightAngle(axis) };
+      anchor: 'middle', angle: uprightAngle(axis) + rotation };
   }
   const { normal, axis } = frame;
   const bend = control ? dot(difference(control, midpoint(start, end)), normal) : 0;
   const side = Math.sign(bend) || (normal.y > 0 || (normal.y === 0 && normal.x < 0) ? -1 : 1);
-  const gap = box.height / 2 + 6 + stroke / 2;
+  const gap = (box.height / 2 + 6 + stroke / 2) * (item.labelOpposite ? -1 : 1);
   return { x: center.x + normal.x * side * gap, y: center.y + normal.y * side * gap,
-    anchor: 'middle', angle: uprightAngle(axis) };
+    anchor: 'middle', angle: uprightAngle(axis) + rotation };
+}
+
+export function swapTransitionLabelSide(item) {
+  if (!item.labelPosition) return { ...item, labelOpposite: !item.labelOpposite };
+  const { t, offset } = item.labelPosition;
+  return { ...item, labelPosition: { t, offset: -offset || item.size + 7 } };
 }
 
 function uprightAngle(axis) {

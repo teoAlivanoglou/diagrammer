@@ -168,6 +168,7 @@ textarea { display: block; min-height: 69px; resize: vertical; }
 .segmented button:hover { color: var(--accent); }
 .segmented button.active { color: #503cc0; background: #fff; border-color: #e3dcff; box-shadow: 0 1px 2px #26213d10; }
 .button.full { margin-top: 12px; width: 100%; font-size: 13px; min-height: 34px; }
+#rotate-label[aria-pressed="true"] { color: #4c36c0; background: var(--accent-light); border-color: #e4ddff; }
 .button.delete { color: #a13c51; }
 .button.delete:hover { background: #fff1f4; border-color: #f1ced7; }
 

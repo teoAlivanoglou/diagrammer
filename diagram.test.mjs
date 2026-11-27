@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { alignShapes, arrowGeometry, curveControlRegion, visibleCurve, distributeShapes, flowLabelPlacement, flowLabelPosition, gridPoint, itemsInMarquee, marqueeBox, pinAttachment, removeItems, reverseFlow, sampleDiagram, shortcutKey, snapEndpoint, stateLoop, withCurve } from './diagram.mjs';
+import { alignShapes, arrowGeometry, curveControlRegion, visibleCurve, distributeShapes, flowLabelPlacement, flowLabelPosition, gridPoint, itemsInMarquee, marqueeBox, pinAttachment, removeItems, reverseFlow, sampleDiagram, shortcutKey, snapEndpoint, stateLoop, swapTransitionLabelSide, withCurve } from './diagram.mjs';
 import { centerLabelLines, flowLabelWordBoxes, measureLabel, wrapLabel } from './drawing.mjs';
 
 const left = { id: 'a', kind: 'entity', x: 0, y: 0, w: 100, h: 50 };
@@ -120,6 +120,19 @@ test('SFD labels stay parallel to the arrow and sit on the outside normal at the
   const flipped = flowLabelPlacement(reversed, arrowGeometry(reversed, [], 2), 2, box);
   assert.equal(flipped.angle, label.angle);
   assert.ok(Math.hypot(flipped.x - label.x, flipped.y - label.y) < 1e-7);
+});
+
+test('SFD labels swap sides and rotate independently, including after dragging', () => {
+  const transition = { notation: 'sfd', from: { x: 20, y: 100 }, to: { x: 20, y: 0 } };
+  const geometry = arrowGeometry(transition, [], 2);
+  const placement = item => flowLabelPlacement(item, geometry, 2, { width: 65, height: 12 });
+  const original = placement(transition);
+  const swapped = swapTransitionLabelSide(transition);
+  assert.deepEqual(placement(swapped), { ...original, x: 40 - original.x });
+  assert.deepEqual(placement({ ...swapped, labelUpsideDown: true }), { ...placement(swapped), angle: original.angle + 180 });
+  const dragged = { ...transition, labelPosition: { t: 0.68, offset: 18 } };
+  assert.deepEqual(placement(swapTransitionLabelSide(dragged)), { ...placement(dragged), x: 2 });
+  assert.deepEqual(swapTransitionLabelSide(swapTransitionLabelSide(dragged)), dragged);
 });
 
 test('a curve keeps its fractional position and perpendicular offset when an endpoint moves', () => {

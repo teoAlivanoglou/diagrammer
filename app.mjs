@@ -2,7 +2,7 @@ import {
   TYPES, FONTS, GRID_SIZE, sampleDiagram, arrowGeometry, flowLabelPosition, normalizeCurves, reverseFlow,
   centerAttachment, curveControlRegion, pinAttachment, setCurveControl, snapEndpoint, withCurve, removeItems,
   alignShapes, distributeShapes, gridPoint, isDiagramShape, itemsInMarquee, marqueeBox, shortcutKey,
-  isStateLoop, isStateMarker, isStateShape, stateLoop,
+  isStateLoop, isStateMarker, isStateShape, stateLoop, swapTransitionLabelSide,
 } from './diagram.mjs';
 import { icon } from './icons.mjs';
 import { svg, drawItem, drawItems, flowLabelCenter, imageBounds, normalizeFlowLabels, renderPng } from './drawing.mjs';
@@ -226,7 +226,9 @@ function paintSelection() {
   $('flow-fields').hidden = item.kind !== 'flow';
   if (item.kind === 'flow') {
     $('straight').disabled = Boolean(isStateLoop(item));
-    $('reset-label').hidden = !item.label || !(item.labelPosition || item.labelOffset);
+    $('transition-label-actions').hidden = item.notation !== 'sfd' || !item.label.trim();
+    $('rotate-label').setAttribute('aria-pressed', Boolean(item.labelUpsideDown));
+    $('reset-label').hidden = !item.label || !(item.labelPosition || item.labelOffset || item.labelOpposite || item.labelUpsideDown);
     for (const [id, active] of [['straight', !item.control], ['curve', Boolean(item.control)]]) {
       $(id).classList.toggle('active', active);
       $(id).setAttribute('aria-pressed', active);
@@ -668,7 +670,13 @@ for (const button of document.querySelectorAll('[data-space]')) {
 $('straight').addEventListener('click', () => updateItem(onlySelected(), item => withCurve(item, false, state.items, state.stroke)));
 $('curve').addEventListener('click', () => updateItem(onlySelected(), item => withCurve(item, true, state.items, state.stroke)));
 $('reverse').addEventListener('click', () => updateItem(onlySelected(), item => reverseFlow(item, state.items)));
-$('reset-label').addEventListener('click', () => updateItem(onlySelected(), { labelOffset: null, labelPosition: null }));
+$('swap-label-side').addEventListener('click', () => updateItem(onlySelected(), swapTransitionLabelSide));
+$('rotate-label').addEventListener('click', () => updateItem(onlySelected(), item => ({
+  ...item, labelUpsideDown: !item.labelUpsideDown,
+})));
+$('reset-label').addEventListener('click', () => updateItem(onlySelected(), {
+  labelOffset: null, labelPosition: null, labelOpposite: null, labelUpsideDown: null,
+}));
 $('font').addEventListener('change', event => {
   updateItem(onlySelected(), { font: event.target.value });
   canvas.focus({ preventScroll: true });

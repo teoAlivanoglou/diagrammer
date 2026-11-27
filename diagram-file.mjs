@@ -52,6 +52,8 @@ function validateItems(items) {
         (item.control != null && !isControl(item.control)) ||
         (item.labelPosition != null && (!between(item.labelPosition.t, -1e8, 1e8) ||
           !between(item.labelPosition.offset, -5e7, 5e7))) ||
+        (item.labelOpposite != null && typeof item.labelOpposite !== 'boolean') ||
+        (item.labelUpsideDown != null && typeof item.labelUpsideDown !== 'boolean') ||
         (item.labelOffset != null && !isPoint(item.labelOffset))) throw new Error('Invalid arrow geometry.');
     } else {
       if (!isPoint(item) || !between(item.w, 24, 1600) || !between(item.h, 24, 1600)) {
