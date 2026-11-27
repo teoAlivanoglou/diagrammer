@@ -1,4 +1,4 @@
-import { arrowGeometry, flowLabelPlacement, FONTS, isDiagramShape } from './diagram.mjs';
+import { arrowGeometry, flowLabelPlacement, FONTS, isDiagramShape, segmentPath, visibleFlow } from './diagram.mjs';
 
 const SVG = 'http://www.w3.org/2000/svg';
 export const INK = '#25324a';
@@ -10,7 +10,6 @@ export function svg(tag, attrs = {}, ...children) {
   return element;
 }
 
-const pointString = point => point.x + ',' + point.y;
 let textContext;
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 
@@ -64,21 +63,31 @@ export function centerLabelLines(lines, x, y, leading, anchor) {
   }));
 }
 
-function measureLabel(item) {
+export function measureLabel(item, context) {
   const font = FONTS[item.font] ?? FONTS.Arial;
-  textContext ??= document.createElement('canvas').getContext('2d');
-  textContext.font = item.size + 'px ' + font;
+  context ??= (textContext ??= document.createElement('canvas').getContext('2d'));
+  context.font = item.size + 'px ' + font;
   const content = isDiagramShape(item)
     ? wrapLabel(item.label, (item.kind === 'process' ? item.w * 0.8 : item.w) - 14,
-      text => textContext.measureText(text).width)
+      text => context.measureText(text).width)
     : item.label.split('\n');
   return content.map(text => {
-    const measured = textContext.measureText(text);
+    const measured = context.measureText(text);
     return {
       text, left: measured.actualBoundingBoxLeft, right: measured.actualBoundingBoxRight,
       ascent: measured.actualBoundingBoxAscent, descent: measured.actualBoundingBoxDescent,
     };
   });
+}
+
+export function labelInkSize(metrics, size) {
+  const { top, bottom, width } = labelInkBounds(metrics, size * 1.22);
+  return { width, height: Math.max(0, bottom - top) };
+}
+
+export function flowLabelBox({ x, y, anchor }, { width, height }, padding) {
+  const left = x - width * (anchor === 'start' ? 0 : anchor === 'end' ? 1 : 0.5);
+  return { x: left - padding, y: y - height / 2 - padding, width: width + 2 * padding, height: height + 2 * padding };
 }
 
 function label(item, x, y, anchor = 'middle', metrics = measureLabel(item)) {
@@ -113,24 +122,23 @@ export function drawItem(item, state, selected = false, interactive = false, zoo
       d: g.path, stroke: 'transparent', 'stroke-width': Math.max(14 / zoom, state.stroke),
       fill: 'none', 'pointer-events': 'stroke',
     }));
-    group.append(svg('path', { d: g.path, ...stroke }), svg('polyline', {
-      points: [g.wings[0], g.end, g.wings[1]].map(pointString).join(' '), ...stroke,
-    }));
+    let mask;
+    let annotation;
     if (item.label) {
       const metrics = measureLabel(item);
-      const { top, bottom, width } = labelInkBounds(metrics, item.size * 1.22);
-      const height = Math.max(0, bottom - top);
-      const { x, y, anchor } = flowLabelPlacement(item, g, state.stroke, { width, height });
+      const size = labelInkSize(metrics, item.size);
+      const placement = flowLabelPlacement(item, g, state.stroke, size);
+      const { x, y, anchor } = placement;
       const text = label(item, x, y, anchor, metrics);
-      if (interactive && width) {
-        const padding = 4 / zoom;
-        const left = x - width * (anchor === 'start' ? 0 : anchor === 'end' ? 1 : 0.5);
-        group.append(svg('g', { 'data-flow-label': '' }, svg('rect', {
-          x: left - padding, y: y - height / 2 - padding,
-          width: width + padding * 2, height: height + padding * 2, fill: 'transparent',
-        }), text));
-      } else group.append(text);
+      if (size.width) mask = flowLabelBox(placement, size, 4 + state.stroke / 2);
+      annotation = interactive && size.width
+        ? svg('g', { 'data-flow-label': '' },
+          svg('rect', { ...flowLabelBox(placement, size, 4 / zoom), fill: 'transparent' }), text)
+        : text;
     }
+    const path = visibleFlow(g, mask).map(segmentPath).join(' ');
+    if (path) group.append(svg('path', { d: path, ...stroke }));
+    if (annotation) group.append(annotation);
     return group;
   }
   if (interactive && (item.kind === 'store' || item.kind === 'text')) group.append(svg('rect', {

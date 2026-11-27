@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { alignShapes, arrowGeometry, distributeShapes, flowLabelPlacement, gridPoint, itemsInMarquee, marqueeBox, removeItems, sampleDiagram, shortcutKey, snapEndpoint, withCurve } from './diagram.mjs';
+import { alignShapes, arrowGeometry, visibleCurve, distributeShapes, flowLabelPlacement, gridPoint, itemsInMarquee, marqueeBox, removeItems, sampleDiagram, shortcutKey, snapEndpoint, withCurve } from './diagram.mjs';
 import { centerLabelLines, wrapLabel } from './drawing.mjs';
 import { renderWord } from './word.mjs';
 
@@ -94,6 +94,19 @@ test('an extreme control point cannot turn a curve into either attached shape', 
   const g = arrowGeometry(curve, [left, store], 2);
   assert.ok(g.control.x >= g.start.x);
   assert.ok(g.control.y < g.end.y);
+});
+
+test('the transparent label gap preserves quadratic segments outside its bounds', () => {
+  const curve = { start: { x: 0, y: 0 }, control: { x: 50, y: -100 }, end: { x: 100, y: 0 } };
+  const box = { x: 40, y: -55, width: 20, height: 10 };
+  const parts = visibleCurve(curve, box);
+  assert.equal(parts.length, 2);
+  assert.deepEqual(parts[0].start, curve.start);
+  assert.ok(Math.abs(parts[0].end.x - 40) < 1e-7);
+  assert.ok(Math.abs(parts[1].start.x - 60) < 1e-7);
+  assert.deepEqual(parts[1].end, curve.end);
+  assert.ok(parts.every(part => part.control));
+  assert.deepEqual(visibleCurve(curve, { x: -1, y: -101, width: 102, height: 102 }), []);
 });
 
 test('curved labels keep their full ink box beyond the outside tangent', () => {

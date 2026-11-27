@@ -269,10 +269,70 @@ export function arrowGeometry(flow, items, stroke) {
     x: end.x - length * Math.cos(angle + offset),
     y: end.y - length * Math.sin(angle + offset),
   }));
-  const path = 'M ' + start.x + ' ' + start.y + (control
+  const path = segmentPath({ start, end, control });
+  return { start, end, control, center, wings, path };
+}
+
+export function segmentPath({ start, control, end }) {
+  return 'M ' + start.x + ' ' + start.y + (control
     ? ' Q ' + control.x + ' ' + control.y + ' '
     : ' L ') + end.x + ' ' + end.y;
-  return { start, end, control, center, wings, path };
+}
+
+function crossings(start, control, end, edge) {
+  const b = control == null ? end - start : 2 * (control - start);
+  const a = end - start - b;
+  const c = start - edge;
+  if (Math.abs(a) < 1e-8) return Math.abs(b) < 1e-8 ? [] : [-c / b];
+  const d = b * b - 4 * a * c;
+  if (d < 0) return [];
+  return [(-b - Math.sqrt(d)) / (2 * a), (-b + Math.sqrt(d)) / (2 * a)];
+}
+
+export function visibleCurve(segment, box) {
+  if (!box) return [segment];
+  const { start, control, end } = segment;
+  const right = box.x + box.width;
+  const bottom = box.y + box.height;
+  const cuts = [
+    ...crossings(start.x, control?.x, end.x, box.x), ...crossings(start.x, control?.x, end.x, right),
+    ...crossings(start.y, control?.y, end.y, box.y), ...crossings(start.y, control?.y, end.y, bottom),
+  ].filter(t => t > 0 && t < 1).sort((a, b) => a - b);
+  const at = t => {
+    const u = 1 - t;
+    return control
+      ? { x: u * u * start.x + 2 * u * t * control.x + t * t * end.x,
+        y: u * u * start.y + 2 * u * t * control.y + t * t * end.y }
+      : { x: u * start.x + t * end.x, y: u * start.y + t * end.y };
+  };
+  // Merge intervals on the same side of the mask so they share one path.
+  const intervals = [];
+  let from = 0;
+  for (const to of [...cuts, 1]) {
+    if (to - from < 1e-8) continue;
+    const point = at((from + to) / 2);
+    if (point.x < box.x || point.x > right || point.y < box.y || point.y > bottom) {
+      const previous = intervals.at(-1);
+      if (previous && previous[1] === from) previous[1] = to;
+      else intervals.push([from, to]);
+    }
+    from = to;
+  }
+  return intervals.map(([a, b]) => {
+    const first = at(a);
+    const middle = control && {
+      x: first.x + (b - a) * ((1 - a) * (control.x - start.x) + a * (end.x - control.x)),
+      y: first.y + (b - a) * ((1 - a) * (control.y - start.y) + a * (end.y - control.y)),
+    };
+    return { start: first, control: middle, end: at(b) };
+  });
+}
+
+export function visibleFlow(geometry, box) {
+  return [
+    ...visibleCurve(geometry, box),
+    ...geometry.wings.flatMap(wing => visibleCurve({ start: wing, end: geometry.end }, box)),
+  ];
 }
 
 function curvedLabelPosition(control, geometry, stroke, box) {
