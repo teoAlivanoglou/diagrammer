@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { alignShapes, arrowGeometry, visibleCurve, distributeShapes, flowLabelPlacement, flowLabelPosition, gridPoint, itemsInMarquee, marqueeBox, removeItems, reverseFlow, sampleDiagram, shortcutKey, snapEndpoint, withCurve } from './diagram.mjs';
+import { alignShapes, arrowGeometry, curveControlRegion, visibleCurve, distributeShapes, flowLabelPlacement, flowLabelPosition, gridPoint, itemsInMarquee, marqueeBox, removeItems, reverseFlow, sampleDiagram, shortcutKey, snapEndpoint, withCurve } from './diagram.mjs';
 import { centerLabelLines, flowLabelWordBoxes, measureLabel, wrapLabel } from './drawing.mjs';
 import { renderWord } from './word.mjs';
 
@@ -94,6 +94,22 @@ test('an extreme control point cannot turn a curve into either attached shape', 
   const g = arrowGeometry(curve, [left, store], 2);
   assert.ok(g.control.x >= g.start.x);
   assert.ok(g.control.y < g.end.y);
+});
+
+test('attached curve tangents and the debug region share a 120-degree opening', () => {
+  const items = [left, right];
+  const curve = { ...flow, control: { t: 0.5, offset: -900 } };
+  const { start, end, control } = arrowGeometry(curve, items, 2);
+  const region = curveControlRegion(curve, items, 2, { x: -100, y: -100, width: 400, height: 200 });
+  const maxSlope = Math.sqrt(3);
+  assert.ok(Math.abs(Math.abs(control.y) / (control.x - start.x) - maxSlope) < 1e-7);
+  assert.equal(region.length, 6);
+  for (const { x, y } of region) {
+    assert.ok(Math.abs(y) <= maxSlope * Math.min(x - start.x, end.x - x) + 1e-7);
+  }
+  const free = { ...curve, to: { x: 200, y: 0 } };
+  const freeRegion = curveControlRegion(free, [left], 2, { x: 196, y: 90, width: 4, height: 10 });
+  assert.equal(freeRegion.length, 4);
 });
 
 test('opposite flows use separate attachment points on the same store rail and process', () => {

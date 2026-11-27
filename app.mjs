@@ -1,6 +1,6 @@
 import {
   TYPES, FONTS, GRID_SIZE, sampleDiagram, arrowGeometry, flowLabelPosition, normalizeCurves, reverseFlow,
-  setCurveControl, snapEndpoint, withCurve, removeItems,
+  curveControlRegion, setCurveControl, snapEndpoint, withCurve, removeItems,
   alignShapes, distributeShapes, gridPoint, isDiagramShape, itemsInMarquee, marqueeBox, shortcutKey,
 } from './diagram.mjs';
 import { icon } from './icons.mjs';
@@ -12,6 +12,8 @@ const $ = id => document.getElementById(id);
 const canvas = $('canvas');
 const drawing = $('drawing');
 const overlays = $('overlays');
+const curveDebugLayer = svg('g', { 'pointer-events': 'none', 'aria-hidden': 'true' });
+canvas.insertBefore(curveDebugLayer, drawing);
 const surface = $('surface');
 const storageKey = 'diagrammer-document-v1';
 const tools = { select: { name: 'Select', shortcut: 'V' }, ...TYPES };
@@ -34,6 +36,13 @@ let toastTimer;
 let zoom = 1;
 let center = { x: 0, y: 0 };
 let followFit = true;
+let curveDebug = false;
+
+window.diagrammerDebug = (enabled = true) => {
+  curveDebug = enabled === true;
+  paintCurveDebug();
+  return curveDebug;
+};
 
 function load() {
   try {
@@ -201,7 +210,29 @@ function paintSelection() {
   }
 }
 
+function paintCurveDebug() {
+  curveDebugLayer.replaceChildren();
+  if (!curveDebug || activeTool !== 'select') return;
+  const item = onlySelected();
+  if (item?.kind !== 'flow' || !item.control) return;
+  const { x, y, width, height } = canvas.viewBox.baseVal;
+  if (!width || !height) return;
+  // Keep the outline at the viewport edges just offscreen.
+  const margin = 2 / zoom;
+  const points = curveControlRegion(item, state.items, state.stroke, {
+    x: x - margin, y: y - margin, width: width + 2 * margin, height: height + 2 * margin,
+  });
+  if (!points.length) return;
+  curveDebugLayer.append(svg('polygon', {
+    points: points.map(point => point.x + ',' + point.y).join(' '),
+    fill: '#7057e5', 'fill-opacity': 0.14, stroke: '#7057e5',
+    'stroke-width': 1 / zoom, 'stroke-dasharray': 5 / zoom + ' ' + 4 / zoom,
+    'data-curve-debug': '',
+  }));
+}
+
 function paintCanvas() {
+  paintCurveDebug();
   drawItems(drawing, state, state.items, selected, true, zoom);
   overlays.replaceChildren();
   const item = onlySelected();
@@ -252,6 +283,7 @@ function setViewport() {
   const h = surface.clientHeight / zoom;
   if (!w || !h) return;
   canvas.setAttribute('viewBox', [center.x - w / 2, center.y - h / 2, w, h].join(' '));
+  if (curveDebug) paintCurveDebug();
   const gap = GRID_SIZE * zoom;
   surface.style.backgroundSize = gap + 'px ' + gap + 'px';
   surface.style.backgroundPosition = (surface.clientWidth / 2 - center.x * zoom - gap / 2) + 'px ' +

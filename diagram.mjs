@@ -247,7 +247,7 @@ function unit(point) {
   return length ? { x: point.x / length, y: point.y / length } : { x: 1, y: 0 };
 }
 
-function constrainControl(preferred, { start, end, startNormal, endNormal }, limitT = true) {
+function controlPlanes({ start, end, startNormal, endNormal }, limitT = true) {
   const { axis, length } = chordFrame(start, end);
   // Each supporting plane faces outward. The two chord planes keep t in [0, 1].
   const planes = [];
@@ -255,8 +255,23 @@ function constrainControl(preferred, { start, end, startNormal, endNormal }, lim
     planes.push({ point: start, normal: axis, gap: 0 },
       { point: end, normal: { x: -axis.x, y: -axis.y }, gap: 0 });
   }
-  if (startNormal) planes.push({ point: start, normal: startNormal, gap: 0.25 });
-  if (endNormal) planes.push({ point: end, normal: endNormal, gap: 0.25 });
+  for (const [point, normal] of [[start, startNormal], [end, endNormal]]) {
+    if (!normal) continue;
+    planes.push({ point, normal, gap: 0.25 });
+    // The inward normals of the cone's edges are rotated 30° from its axis.
+    for (const side of [-0.5, 0.5]) {
+      const along = Math.sqrt(3) / 2;
+      planes.push({ point, gap: 0, normal: {
+        x: along * normal.x - side * normal.y,
+        y: along * normal.y + side * normal.x,
+      } });
+    }
+  }
+  return planes;
+}
+
+function constrainControl(preferred, ports, limitT = true) {
+  const planes = controlPlanes(ports, limitT);
   const missing = ({ point, normal, gap }) => gap - dot(difference(preferred, point), normal);
   const feasible = delta => planes.every(plane => dot(delta, plane.normal) >= missing(plane) - 1e-7);
   if (feasible({ x: 0, y: 0 })) return preferred;
@@ -284,6 +299,27 @@ function constrainControl(preferred, { start, end, startNormal, endNormal }, lim
     }
   }
   return best;
+}
+
+export function curveControlRegion(flow, items, stroke, { x, y, width, height }) {
+  if (!flow.control) return [];
+  const ports = flowPorts(flow, items, true, stroke);
+  const limitT = Boolean(constrainControl(midpoint(ports.start, ports.end), ports));
+  let polygon = [{ x, y }, { x: x + width, y }, { x: x + width, y: y + height }, { x, y: y + height }];
+  for (const { point, normal, gap } of controlPlanes(ports, limitT)) {
+    const vertices = polygon;
+    polygon = [];
+    for (const [index, a] of vertices.entries()) {
+      const b = vertices[(index + 1) % vertices.length];
+      const da = dot(difference(a, point), normal) - gap;
+      const db = dot(difference(b, point), normal) - gap;
+      if (da >= 0) polygon.push(a);
+      if ((da < 0) === (db < 0)) continue;
+      const t = da / (da - db);
+      polygon.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    }
+  }
+  return polygon;
 }
 
 function chordFrame(start, end) {
