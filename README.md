@@ -23,6 +23,7 @@ Open http://127.0.0.1:4173/ in a current browser. The app starts with a Greek-la
 - In Select mode, drag from empty canvas to select enclosed elements. Hold Shift while dragging to add to the current selection.
 - Pick **Data flow** and click its start and end. Click a shape to attach to it or click empty canvas for a free endpoint.
 - Select an arrow and choose **Curved** to add one quadratic control point. The bend follows the endpoints when shapes move. Drag the square handle to adjust it, or choose **Straight** to remove it. Drag a round endpoint onto the grid to detach it. To reconnect, drop it on a highlighted shape or near the top or bottom rail of a data store.
+- Arrows between the same two shapes use separate attachment points. The gap grows for thicker lines and fits within the available edge.
 - Double-click a shape or flow to edit its label. Labels inside shapes wrap as you resize the shape and keep any line breaks you enter. Use the **Text** tool for standalone notes. All four font options support Greek.
 - Curved arrow labels start outside the bend. Drag any arrow label to adjust its position. The arrow leaves a transparent gap where its label overlaps it. Use **Reset label position** to return it to automatic placement.
 - Change **Line thickness** under Diagram to update every outline and arrow. Hold Shift while selecting items to copy them together, or deselect everything to copy the full diagram.

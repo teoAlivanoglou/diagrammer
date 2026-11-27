@@ -144,13 +144,84 @@ function port(node, toward, side) {
     normal: horizontal ? { x: Math.sign(dx), y: 0 } : { x: 0, y: Math.sign(dy) } };
 }
 
-function flowPorts(flow, items, curved = Boolean(flow.control)) {
-  const from = endpointPosition(flow.from, items);
-  const to = endpointPosition(flow.to, items);
+function basePorts(from, to, flow) {
   let a = port(from, to, flow.from.side);
   let b = port(to, from, flow.to.side);
   if (from.kind === 'store' && to.kind !== 'store') b = port(to, a.point, flow.to.side);
   if (to.kind === 'store' && from.kind !== 'store') a = port(from, b.point, flow.from.side);
+  return [a, b];
+}
+
+const pairedFlows = new WeakMap();
+
+function siblingFlows(flow, items) {
+  if (flow.kind !== 'flow' || !flow.from.node || !flow.to.node || !flow.id) return [];
+  const pairKey = item => JSON.stringify([item.from.node, item.to.node].sort());
+  let pairs = pairedFlows.get(items);
+  if (!pairs) {
+    pairs = new Map();
+    for (const item of items) {
+      if (item.kind !== 'flow' || !item.from.node || !item.to.node) continue;
+      const key = pairKey(item);
+      if (!pairs.has(key)) pairs.set(key, []);
+      pairs.get(key).push(item);
+    }
+    pairedFlows.set(items, pairs);
+  }
+  return pairs.get(pairKey(flow)) ?? [];
+}
+
+function spreadPort(node, attachment, laneAxis, index, count, spacing) {
+  if (count < 2) return attachment;
+  const { point, normal } = attachment;
+  const lane = index - (count - 1) / 2;
+  if (node.kind === 'process') {
+    const rx = node.w / 2;
+    const ry = node.h / 2;
+    const angle = Math.atan2((point.y - node.y) / ry, (point.x - node.x) / rx);
+    const tangent = { x: -rx * Math.sin(angle), y: ry * Math.cos(angle) };
+    const sign = dot(tangent, laneAxis) >= 0 ? 1 : -1;
+    const step = Math.min(spacing / Math.hypot(tangent.x, tangent.y), Math.PI * 0.78 / (count - 1));
+    return port(node, { x: node.x + rx * Math.cos(angle + sign * lane * step),
+      y: node.y + ry * Math.sin(angle + sign * lane * step) });
+  }
+  const axis = normal.x ? 'y' : 'x';
+  const radius = (axis === 'x' ? node.w : node.h) / 2;
+  const usable = radius - Math.min(2, radius * 0.1);
+  const step = Math.min(spacing, 2 * usable / (count - 1));
+  const excursion = step * (count - 1) / 2;
+  const middle = Math.max(node[axis] - usable + excursion, Math.min(node[axis] + usable - excursion, point[axis]));
+  const sign = laneAxis[axis] >= 0 ? 1 : -1;
+  return { point: { ...point, [axis]: middle + sign * lane * step }, normal };
+}
+
+function separatedPorts(flow, items, from, to, a, b, stroke) {
+  const siblings = siblingFlows(flow, items);
+  if (siblings.length < 2 || !siblings.some(item => item.id === flow.id)) return [a, b];
+  const forward = flow.from.node < flow.to.node;
+  const first = forward ? from : to;
+  const second = forward ? to : from;
+  const axis = chordFrame(first, second).normal;
+  const spacing = Math.max(16, 10 + 2 * stroke);
+  const peers = siblings.map(item => {
+    const source = item.from.node === flow.from.node ? from : to;
+    const target = source === from ? to : from;
+    const ports = item.id === flow.id ? [a, b] : basePorts(source, target, item);
+    const bend = (item.from.node === first.id ? 1 : -1) * (item.control?.offset ?? 0);
+    return { id: item.id, bend, ports: source === from ? ports : ports.reverse() };
+  }).sort((l, r) => l.bend - r.bend || l.id.localeCompare(r.id));
+  return [[from, a], [to, b]].map(([node, attachment], end) => {
+    const lanes = peers.filter(peer => node.kind === 'process' ||
+      (peer.ports[end].normal.x === attachment.normal.x && peer.ports[end].normal.y === attachment.normal.y));
+    return spreadPort(node, attachment, axis, lanes.findIndex(peer => peer.id === flow.id), lanes.length, spacing);
+  });
+}
+
+function flowPorts(flow, items, curved = Boolean(flow.control), stroke = 2) {
+  const from = endpointPosition(flow.from, items);
+  const to = endpointPosition(flow.to, items);
+  let [a, b] = basePorts(from, to, flow);
+  [a, b] = separatedPorts(flow, items, from, to, a, b, stroke);
   const ports = () => ({ start: a.point, end: b.point, startNormal: a.normal, endNormal: b.normal });
   if (curved && !constrainControl(midpoint(a.point, b.point), ports())) {
     // Overlapping shapes can make facing ports incompatible. Use a common
@@ -229,14 +300,14 @@ function relativeControl(point, start, end) {
     offset: dot(delta, normal) };
 }
 
-export function setCurveControl(flow, items, point) {
-  const { start, end } = flowPorts(flow, items, true);
+export function setCurveControl(flow, items, point, stroke = 2) {
+  const { start, end } = flowPorts(flow, items, true, stroke);
   return { ...flow, control: relativeControl(point, start, end) };
 }
 
-export function normalizeCurves(items) {
+export function normalizeCurves(items, stroke = 2) {
   return items.map(item => item.kind === 'flow' && item.control && !Number.isFinite(item.control.t)
-    ? setCurveControl(item, items, item.control) : item);
+    ? setCurveControl(item, items, item.control, stroke) : item);
 }
 
 export function reverseFlow(flow, items) {
@@ -247,7 +318,7 @@ export function reverseFlow(flow, items) {
 }
 
 export function arrowGeometry(flow, items, stroke) {
-  const ports = flowPorts(flow, items);
+  const ports = flowPorts(flow, items, Boolean(flow.control), stroke);
   const { start, end } = ports;
   let control = null;
   if (flow.control) {
@@ -376,10 +447,10 @@ export function flowLabelPlacement(item, geometry, stroke, box) {
   };
 }
 
-export function withCurve(flow, curved, items) {
+export function withCurve(flow, curved, items, stroke = 2) {
   if (!curved) return { ...flow, control: null };
   if (flow.control) return flow;
-  const { start, end } = flowPorts(flow, items);
+  const { start, end } = flowPorts(flow, items, true, stroke);
   const { length } = chordFrame(start, end);
   return { ...flow, control: { t: 0.5, offset: -Math.min(105, Math.max(55, length * 0.38)) } };
 }

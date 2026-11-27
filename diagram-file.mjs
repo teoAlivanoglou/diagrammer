@@ -17,7 +17,7 @@ export function selectionFile(state, ids) {
       to: nodes.has(item.to.node) ? item.to : end,
     };
     return control && (detached.from !== item.from || detached.to !== item.to)
-      ? setCurveControl(detached, chosen, control) : detached;
+      ? setCurveControl(detached, chosen, control, state.stroke) : detached;
   });
   return { ...marker, type: 'selection', items };
 }
@@ -27,7 +27,8 @@ const isPoint = value => value && between(value.x, -1e7, 1e7) && between(value.y
 const isEndpoint = value => typeof value?.node === 'string'
   ? value.side == null || value.side === 'top' || value.side === 'bottom'
   : isPoint(value);
-const isControl = value => isPoint(value) || (value && between(value.t, 0, 1) && between(value.offset, -5e7, 5e7));
+const isControl = value => value && (Object.hasOwn(value, 't')
+  ? between(value.t, 0, 1) && between(value.offset, -5e7, 5e7) : isPoint(value));
 
 function validateItems(items) {
   if (!Array.isArray(items) || items.length > 10000) throw new Error('Invalid diagram elements.');
@@ -69,7 +70,7 @@ export function decodeFile(text) {
     if (typeof diagram?.title !== 'string' || diagram.title.length > 70 ||
       !between(diagram.stroke, 0.5, 8)) throw new Error('Invalid diagram settings.');
     validateItems(diagram.items);
-    file.diagram.items = normalizeCurves(diagram.items);
+    file.diagram.items = normalizeCurves(diagram.items, diagram.stroke);
   } else if (file.type === 'selection') {
     validateItems(file.items);
     if (!file.items.length) throw new Error('The shape set is empty.');

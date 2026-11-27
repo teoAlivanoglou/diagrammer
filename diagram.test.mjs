@@ -96,6 +96,17 @@ test('an extreme control point cannot turn a curve into either attached shape', 
   assert.ok(g.control.y < g.end.y);
 });
 
+test('opposite flows use separate attachment points on the same store rail and process', () => {
+  const sample = sampleDiagram();
+  const flows = sample.items.filter(item => ['record', 'status'].includes(item.id));
+  const [outbound, inbound] = flows.map(item => arrowGeometry(item, sample.items, 2));
+  assert.equal(outbound.end.y, inbound.start.y);
+  assert.ok(Math.abs(outbound.end.x - inbound.start.x) >= 15);
+  assert.ok(Math.hypot(outbound.start.x - inbound.end.x, outbound.start.y - inbound.end.y) >= 15);
+  const [thickOut, thickIn] = flows.map(item => arrowGeometry(item, sample.items, 8));
+  assert.ok(Math.abs(thickOut.end.x - thickIn.start.x) > Math.abs(outbound.end.x - inbound.start.x));
+});
+
 test('the transparent label gap preserves quadratic segments outside its bounds', () => {
   const curve = { start: { x: 0, y: 0 }, control: { x: 50, y: -100 }, end: { x: 100, y: 0 } };
   const box = { x: 40, y: -55, width: 20, height: 10 };

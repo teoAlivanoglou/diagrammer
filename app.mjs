@@ -39,7 +39,7 @@ function load() {
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey));
     if (saved && Array.isArray(saved.items) && Number.isFinite(saved.stroke)) {
-      return { ...saved, items: normalizeCurves(saved.items) };
+      return { ...saved, items: normalizeCurves(saved.items, saved.stroke) };
     }
   } catch { /* Use the example when local storage is unavailable. */ }
   return sampleDiagram();
@@ -460,7 +460,7 @@ canvas.addEventListener('pointermove', event => {
     }
     if (drag.type === 'handle') {
       if (item.id !== drag.id) return item;
-      if (drag.handle === 'control') return setCurveControl(item, drag.snapshot.items, point);
+      if (drag.handle === 'control') return setCurveControl(item, drag.snapshot.items, point, state.stroke);
       return { ...item, [drag.handle]: snapDraggedEndpoint(point, item, drag.handle) };
     }
     if (!selected.has(item.id)) return item;
@@ -557,8 +557,8 @@ for (const button of document.querySelectorAll('[data-space]')) {
     if (items !== state.items) update({ ...state, items });
   });
 }
-$('straight').addEventListener('click', () => updateItem(onlySelected(), item => withCurve(item, false, state.items)));
-$('curve').addEventListener('click', () => updateItem(onlySelected(), item => withCurve(item, true, state.items)));
+$('straight').addEventListener('click', () => updateItem(onlySelected(), item => withCurve(item, false, state.items, state.stroke)));
+$('curve').addEventListener('click', () => updateItem(onlySelected(), item => withCurve(item, true, state.items, state.stroke)));
 $('reverse').addEventListener('click', () => updateItem(onlySelected(), item => reverseFlow(item, state.items)));
 $('reset-label').addEventListener('click', () => updateItem(onlySelected(), { labelOffset: null }));
 $('font').addEventListener('change', event => {
