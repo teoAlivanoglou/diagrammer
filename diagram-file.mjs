@@ -24,7 +24,9 @@ export function selectionFile(state, ids) {
 
 const between = (value, min, max) => Number.isFinite(value) && value >= min && value <= max;
 const isPoint = value => value && between(value.x, -1e7, 1e7) && between(value.y, -1e7, 1e7);
-const isEndpoint = value => typeof value?.node === 'string' || isPoint(value);
+const isEndpoint = value => typeof value?.node === 'string'
+  ? value.side == null || value.side === 'top' || value.side === 'bottom'
+  : isPoint(value);
 const isControl = value => isPoint(value) || (value && between(value.t, 0, 1) && between(value.offset, -5e7, 5e7));
 
 function validateItems(items) {
@@ -79,7 +81,7 @@ export function decodeFile(text) {
 export function instantiateItems(items, offset, makeId = () => crypto.randomUUID()) {
   const ids = new Map(items.map(item => [item.id, makeId()]));
   const translate = point => ({ x: point.x + offset.x, y: point.y + offset.y });
-  const endpoint = value => value.node ? { node: ids.get(value.node) } : translate(value);
+  const endpoint = value => value.node ? { ...value, node: ids.get(value.node) } : translate(value);
   return normalizeCurves(items).map(item => {
     const id = ids.get(item.id);
     return item.kind === 'flow'

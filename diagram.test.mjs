@@ -80,6 +80,22 @@ test('a curve keeps its fractional position and perpendicular offset when an end
   assert.deepEqual(moved.control, { x: 100, y: -40 });
 });
 
+test('data flow connects to a data store rail, including when approached from the side', () => {
+  const store = { ...right, kind: 'store', h: 50 };
+  const g = arrowGeometry(flow, [left, store], 2);
+  assert.equal(g.end.y, -25);
+  const lower = arrowGeometry({ ...flow, to: { node: 'b', side: 'bottom' } }, [left, store], 2);
+  assert.equal(lower.end.y, 25);
+});
+
+test('an extreme control point cannot turn a curve into either attached shape', () => {
+  const store = { ...right, kind: 'store', h: 50 };
+  const curve = { ...flow, control: { t: 0.5, offset: 900 } };
+  const g = arrowGeometry(curve, [left, store], 2);
+  assert.ok(g.control.x >= g.start.x);
+  assert.ok(g.control.y < g.end.y);
+});
+
 test('curved labels keep their full ink box beyond the outside tangent', () => {
   const item = {
     from: { x: 0, y: 0 }, to: { x: 150, y: 100 },

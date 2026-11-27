@@ -114,29 +114,106 @@ export function snapEndpoint(point, items, tolerance = 0, excludedNode) {
       bestDistance = distance;
     }
   }
-  return closest ? { node: closest } : { x: point.x, y: point.y };
+  if (!closest) return { x: point.x, y: point.y };
+  const node = items.find(item => item.id === closest);
+  if (node.kind === 'store' && Math.abs(point.y - node.y) >= node.h / 4) {
+    return { node: closest, side: point.y < node.y ? 'top' : 'bottom' };
+  }
+  return { node: closest };
 }
 
-function boundary(point, toward) {
-  if (!point.w) return { x: point.x, y: point.y };
-  const rx = point.w / 2;
-  const ry = point.h / 2;
-  const dx = toward.x - point.x || (toward.y === point.y ? 1 : 0);
-  const dy = toward.y - point.y;
-  const factor = point.kind === 'process'
-    ? 1 / Math.hypot(dx / rx, dy / ry)
-    : 1 / Math.max(Math.abs(dx) / rx, Math.abs(dy) / ry);
-  return { x: point.x + dx * factor, y: point.y + dy * factor };
+function port(node, toward, side) {
+  if (!node.w) return { point: { x: node.x, y: node.y }, normal: null };
+  const rx = node.w / 2;
+  const ry = node.h / 2;
+  const dx = toward.x - node.x || (toward.y === node.y ? 1 : 0);
+  const dy = toward.y - node.y;
+  if (node.kind === 'store') {
+    const vertical = side ? (side === 'top' ? -1 : 1) : (dy > ry ? 1 : -1);
+    const x = Math.max(-rx, Math.min(rx, Math.abs(dy) > 1e-7 ? dx * ry / Math.abs(dy) : Math.sign(dx) * rx));
+    return { point: { x: node.x + x, y: node.y + vertical * ry }, normal: { x: 0, y: vertical } };
+  }
+  if (node.kind === 'process') {
+    const factor = 1 / Math.hypot(dx / rx, dy / ry);
+    const normal = unit({ x: dx / rx ** 2, y: dy / ry ** 2 });
+    return { point: { x: node.x + dx * factor, y: node.y + dy * factor }, normal };
+  }
+  const horizontal = Math.abs(dx) / rx >= Math.abs(dy) / ry;
+  const factor = horizontal ? rx / Math.abs(dx) : ry / Math.abs(dy);
+  return { point: { x: node.x + dx * factor, y: node.y + dy * factor },
+    normal: horizontal ? { x: Math.sign(dx), y: 0 } : { x: 0, y: Math.sign(dy) } };
 }
 
-function flowPorts(flow, items) {
+function flowPorts(flow, items, curved = Boolean(flow.control)) {
   const from = endpointPosition(flow.from, items);
   const to = endpointPosition(flow.to, items);
-  return { start: boundary(from, to), end: boundary(to, from) };
+  let a = port(from, to, flow.from.side);
+  let b = port(to, from, flow.to.side);
+  if (from.kind === 'store' && to.kind !== 'store') b = port(to, a.point, flow.to.side);
+  if (to.kind === 'store' && from.kind !== 'store') a = port(from, b.point, flow.from.side);
+  const ports = () => ({ start: a.point, end: b.point, startNormal: a.normal, endNormal: b.normal });
+  if (curved && !constrainControl(midpoint(a.point, b.point), ports())) {
+    // Overlapping shapes can make facing ports incompatible. Use a common
+    // outside face so even an overlapping pair has a feasible quadratic.
+    const outside = (node, bias) => {
+      if (!node.w) return port(node, node);
+      if (node.kind === 'store') {
+        return { point: { x: node.x + bias * node.w / 4, y: node.y - node.h / 2 }, normal: { x: 0, y: -1 } };
+      }
+      return port(node, { x: node.x, y: node.y - 1 });
+    };
+    a = outside(from, from.x <= to.x ? -1 : 1);
+    b = outside(to, from.x <= to.x ? 1 : -1);
+  }
+  return ports();
 }
 
 const dot = (a, b) => a.x * b.x + a.y * b.y;
 const difference = (a, b) => ({ x: a.x - b.x, y: a.y - b.y });
+
+function unit(point) {
+  const length = Math.hypot(point.x, point.y);
+  return length ? { x: point.x / length, y: point.y / length } : { x: 1, y: 0 };
+}
+
+function constrainControl(preferred, { start, end, startNormal, endNormal }, limitT = true) {
+  const { axis, length } = chordFrame(start, end);
+  // Each supporting plane faces outward. The two chord planes keep t in [0, 1].
+  const planes = [];
+  if (limitT && length > 1e-7) {
+    planes.push({ point: start, normal: axis, gap: 0 },
+      { point: end, normal: { x: -axis.x, y: -axis.y }, gap: 0 });
+  }
+  if (startNormal) planes.push({ point: start, normal: startNormal, gap: 0.25 });
+  if (endNormal) planes.push({ point: end, normal: endNormal, gap: 0.25 });
+  const missing = ({ point, normal, gap }) => gap - dot(difference(preferred, point), normal);
+  const feasible = delta => planes.every(plane => dot(delta, plane.normal) >= missing(plane) - 1e-7);
+  if (feasible({ x: 0, y: 0 })) return preferred;
+
+  // The closest point in a convex polygon is on an edge or at a vertex.
+  let best = null;
+  let bestDistance = Infinity;
+  const consider = delta => {
+    const distance = Math.hypot(delta.x, delta.y);
+    if (distance < bestDistance && feasible(delta)) {
+      bestDistance = distance;
+      best = { x: preferred.x + delta.x, y: preferred.y + delta.y };
+    }
+  };
+  for (const [i, first] of planes.entries()) {
+    const a = first.normal;
+    const dx = missing(first);
+    consider({ x: a.x * dx, y: a.y * dx });
+    for (const second of planes.slice(i + 1)) {
+      const b = second.normal;
+      const det = a.x * b.y - a.y * b.x;
+      if (Math.abs(det) <= 1e-7) continue;
+      const dy = missing(second);
+      consider({ x: (dx * b.y - a.y * dy) / det, y: (a.x * dy - dx * b.x) / det });
+    }
+  }
+  return best;
+}
 
 function chordFrame(start, end) {
   const chord = difference(end, start);
@@ -153,7 +230,7 @@ function relativeControl(point, start, end) {
 }
 
 export function setCurveControl(flow, items, point) {
-  const { start, end } = flowPorts(flow, items);
+  const { start, end } = flowPorts(flow, items, true);
   return { ...flow, control: relativeControl(point, start, end) };
 }
 
@@ -170,7 +247,8 @@ export function reverseFlow(flow, items) {
 }
 
 export function arrowGeometry(flow, items, stroke) {
-  const { start, end } = flowPorts(flow, items);
+  const ports = flowPorts(flow, items);
+  const { start, end } = ports;
   let control = null;
   if (flow.control) {
     const { t, offset } = Number.isFinite(flow.control.t)
@@ -180,6 +258,7 @@ export function arrowGeometry(flow, items, stroke) {
       x: start.x + (end.x - start.x) * t + normal.x * offset,
       y: start.y + (end.y - start.y) * t + normal.y * offset,
     };
+    control = constrainControl(control, ports) ?? constrainControl(control, ports, false) ?? control;
   }
   const middle = midpoint(start, end);
   const center = control ? midpoint(middle, control) : middle;

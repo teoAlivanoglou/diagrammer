@@ -491,7 +491,7 @@ function finishDrag(event, canceled = false) {
         const point = location(event);
         const target = snapDraggedEndpoint(point, item, handle);
         if (sameEndpoint(target, other) || sameEndpoint(snapEndpoint(point, state.items), other) ||
-          (target.node && target.node === original.node)) state = snapshot;
+          (target.node && target.node === original.node && target.side === original.side)) state = snapshot;
         else state = { ...state, items: state.items.map(entry => entry === item ? { ...item, [handle]: target } : entry) };
       }
       if (state !== snapshot) {
