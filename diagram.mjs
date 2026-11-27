@@ -144,7 +144,7 @@ export function snapEndpoint(point, items, tolerance = 0, excludedNode, accept =
 }
 
 function port(node, toward, side) {
-  if (!node.w) return { point: { x: node.x, y: node.y }, normal: null };
+  if (!node.w || isStateMarker(node)) return { point: { x: node.x, y: node.y }, normal: null };
   const { rx, ry } = radii(node);
   const dx = toward.x - node.x || (toward.y === node.y ? 1 : 0);
   const dy = toward.y - node.y;
@@ -194,6 +194,7 @@ function pinnedPort(node, anchor) {
 }
 
 export function pinAttachment(node, point, magnet = 0) {
+  if (isStateMarker(node)) return { node: node.id };
   const { rx, ry } = radii(node);
   let anchor;
   if (isEllipse(node)) {
@@ -229,8 +230,8 @@ export function pinAttachment(node, point, magnet = 0) {
 
 function basePorts(from, to, flow) {
   const loop = isStateLoop(flow) && from.kind === 'state' ? stateLoop(from.id) : null;
-  const fromPin = flow.from.anchor ?? loop?.from.anchor;
-  const toPin = flow.to.anchor ?? loop?.to.anchor;
+  const fromPin = !isStateMarker(from) && (flow.from.anchor ?? loop?.from.anchor);
+  const toPin = !isStateMarker(to) && (flow.to.anchor ?? loop?.to.anchor);
   const aPin = fromPin && pinnedPort(from, fromPin);
   const bPin = toPin && pinnedPort(to, toPin);
   let a = aPin || port(from, bPin?.point ?? to, flow.from.side);
@@ -303,7 +304,7 @@ function separatedPorts(flow, items, from, to, a, b, stroke) {
       ends: source === from ? ends : ends.reverse() };
   }).sort((l, r) => l.bend - r.bend || l.id.localeCompare(r.id));
   return [[from, a], [to, b]].map(([node, attachment], end) => {
-    if ((end === 0 ? flow.from : flow.to).anchor) return attachment;
+    if (isStateMarker(node) || (end === 0 ? flow.from : flow.to).anchor) return attachment;
     const lanes = peers.filter(peer => isEllipse(node) ||
       (peer.ports[end].normal.x === attachment.normal.x && peer.ports[end].normal.y === attachment.normal.y));
     const index = lanes.findIndex(peer => peer.id === flow.id);
@@ -327,16 +328,21 @@ function flowPorts(flow, items, curved = Boolean(flow.control), stroke = 2) {
   const to = endpointPosition(flow.to, items);
   let [a, b] = basePorts(from, to, flow);
   [a, b] = separatedPorts(flow, items, from, to, a, b, stroke);
+  const startMarker = isStateMarker(from) ? from : null;
+  const endMarker = isStateMarker(to) ? to : null;
+  const startPinned = !startMarker && flow.from.anchor;
+  const endPinned = !endMarker && flow.to.anchor;
   let manualPortsAdjusted = false;
-  const ports = () => ({ start: a.point, end: b.point, startNormal: a.normal, endNormal: b.normal, manualPortsAdjusted });
+  const ports = () => ({ start: a.point, end: b.point, startNormal: a.normal, endNormal: b.normal,
+    startMarker, endMarker, manualPortsAdjusted });
   const feasible = limitT => constrainControl(midpoint(a.point, b.point), ports(), limitT);
   if (curved && !feasible(true)) {
-    if (flow.from.anchor || flow.to.anchor) {
+    if (startPinned || endPinned) {
       if (feasible(false)) return ports();
       // A free endpoint needs no special handling. An automatic port can turn
       // to face the same way as a pin so the two outward openings intersect.
-      if (flow.from.anchor && !flow.to.anchor && to.w) b = portFacing(to, a.normal);
-      if (flow.to.anchor && !flow.from.anchor && from.w) a = portFacing(from, b.normal);
+      if (startPinned && !endPinned && to.w) b = portFacing(to, a.normal);
+      if (endPinned && !startPinned && from.w) a = portFacing(from, b.normal);
       if (feasible(false)) return ports();
       manualPortsAdjusted = true;
     }
@@ -481,9 +487,18 @@ export function reverseFlow(flow, items) {
   };
 }
 
+function markerRim(marker, toward) {
+  const dx = toward.x - marker.x;
+  const dy = toward.y - marker.y;
+  const length = Math.hypot(dx, dy);
+  if (!length) return { x: marker.x, y: marker.y };
+  const t = Math.min(1, radii(marker).rx / length);
+  return { x: marker.x + dx * t, y: marker.y + dy * t };
+}
+
 export function arrowGeometry(flow, items, stroke) {
   const ports = flowPorts(flow, items, Boolean(flow.control), stroke);
-  const { start, end } = ports;
+  let { start, end } = ports;
   let control = null;
   if (flow.control) {
     const { t, offset } = Number.isFinite(flow.control.t)
@@ -495,6 +510,10 @@ export function arrowGeometry(flow, items, stroke) {
     };
     control = constrainControl(control, ports) ?? constrainControl(control, ports, false) ?? control;
   }
+  // Resolve the bend from the dot centers, then move only the visible ends to the rims.
+  const approach = control ?? (ports.startMarker && ports.endMarker ? midpoint(start, end) : null);
+  if (ports.startMarker) start = markerRim(ports.startMarker, approach ?? end);
+  if (ports.endMarker) end = markerRim(ports.endMarker, approach ?? start);
   const middle = midpoint(start, end);
   const center = control ? midpoint(middle, control) : middle;
   const tangent = control ?? start;

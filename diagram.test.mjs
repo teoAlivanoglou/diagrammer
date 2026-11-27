@@ -86,6 +86,25 @@ test('an SFD self-transition attaches at two distinct points and bends outside t
   assert.deepEqual(reversed.control, geometry.control);
 });
 
+test('SFD dots attach at their centers and show the transition up to their rims', () => {
+  const initial = { id: 'initial', kind: 'initial', x: 0, y: 0, w: 24, h: 24 };
+  const final = { ...initial, id: 'final', kind: 'final', x: 200 };
+  assert.deepEqual(pinAttachment(initial, { x: 0, y: 5 }, 8), { node: initial.id });
+  assert.deepEqual(pinAttachment(final, { x: 199, y: -4 }, 8), { node: final.id });
+  const flow = { kind: 'flow', notation: 'sfd', from: { node: initial.id, anchor: { angle: Math.PI / 2 } },
+    to: { node: final.id, anchor: { angle: Math.PI / 2 } } };
+  const items = [initial, final];
+  const straight = arrowGeometry(flow, items, 2);
+  assert.deepEqual(straight.start, { x: 24 * 0.29, y: 0 });
+  assert.deepEqual(straight.end, { x: 200 - 24 * 0.43, y: 0 });
+  const curved = arrowGeometry({ ...flow, control: { t: 0.25, offset: -50 } }, items, 2);
+  assert.deepEqual(curved.control, { x: 50, y: -50 });
+  assert.ok(Math.abs(Math.hypot(curved.start.x, curved.start.y) - 24 * 0.29) < 1e-7);
+  assert.ok(Math.abs(curved.start.x + curved.start.y) < 1e-7);
+  assert.ok(Math.abs(Math.hypot(curved.end.x - final.x, curved.end.y) - 24 * 0.43) < 1e-7);
+  assert.ok(Math.abs(curved.end.x - final.x - 3 * curved.end.y) < 1e-7);
+});
+
 test('SFD labels stay parallel to the arrow and sit on the outside normal at the curve midpoint', () => {
   const transition = { notation: 'sfd', from: { x: 10, y: 15 }, to: { x: 110, y: 115 } };
   const box = { width: 60, height: 12 };

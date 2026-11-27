@@ -39,6 +39,8 @@ Open **SFD** in the Toolbox to use rounded states, start dots, end markers, and 
 
 Click a start point and an end point with the Transition tool. Click the same state twice to make a self-loop. Enter the event and optional response in the label field, using a slash or a line break as needed. Straight labels run parallel to the arrow. Curve labels follow the midpoint tangent and sit off the arrow along its normal. Drag a label to move it.
 
+Start and end dots use automatic attachment. The transition follows the dot center for positioning and meets the visible rim. Drag away from a dot to detach.
+
 ## Curve debugging
 
 Run `diagrammerDebug(true)` in the browser console and select a curved arrow. The shaded region shows where its square bend handle can sit under the current attachment and endpoint rules. Run `diagrammerDebug(false)` to hide the overlay. Reloading the page also turns it off.

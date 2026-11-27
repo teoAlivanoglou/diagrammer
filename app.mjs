@@ -287,8 +287,11 @@ function paintCanvas() {
     }
     for (const [key, point] of [['from', g.start], ['to', g.end]]) {
       const attached = Boolean(item[key].node);
+      const target = itemById(item[key].node);
       overlays.append(svg('g', { 'data-handle': key, 'data-attached': attached },
-        svg('title', {}, 'Drag along a shape to pin this endpoint, or drag away to detach it'),
+        svg('title', {}, target && isStateMarker(target)
+          ? 'This dot attaches automatically. Drag away to detach.'
+          : 'Drag along a shape to pin this endpoint, or drag away to detach it'),
         svg('circle', { cx: point.x, cy: point.y, r: 10 / zoom, fill: 'transparent' }),
         svg('circle', {
           cx: point.x, cy: point.y, r: 5 / zoom, fill: attached ? '#7057e5' : 'white',
@@ -380,8 +383,8 @@ function moveEndpoint(point, flow, handle, snapshot) {
   const original = flow[handle];
   if (original.node === endpoint.node &&
       (endpoint.node
-        ? original.anchor?.side === endpoint.anchor.side && original.anchor?.offset === endpoint.anchor.offset &&
-          original.anchor?.angle === endpoint.anchor.angle
+        ? original.anchor?.side === endpoint.anchor?.side && original.anchor?.offset === endpoint.anchor?.offset &&
+          original.anchor?.angle === endpoint.anchor?.angle
         : original.x === endpoint.x && original.y === endpoint.y)) return flow;
   const updated = completeTransition({ ...flow, [handle]: endpoint });
   if (updated.control && updated.from.anchor && updated.to.anchor) {
