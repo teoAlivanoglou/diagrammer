@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { alignShapes, arrowGeometry, curveControlRegion, visibleCurve, distributeShapes, flowLabelPlacement, flowLabelPosition, gridPoint, itemsInMarquee, marqueeBox, removeItems, reverseFlow, sampleDiagram, shortcutKey, snapEndpoint, withCurve } from './diagram.mjs';
+import { alignShapes, arrowGeometry, curveControlRegion, visibleCurve, distributeShapes, flowLabelPlacement, flowLabelPosition, gridPoint, itemsInMarquee, marqueeBox, pinAttachment, removeItems, reverseFlow, sampleDiagram, shortcutKey, snapEndpoint, withCurve } from './diagram.mjs';
 import { centerLabelLines, flowLabelWordBoxes, measureLabel, wrapLabel } from './drawing.mjs';
 import { renderWord } from './word.mjs';
 
@@ -233,6 +233,36 @@ test('a detached flow snaps near the actual shape and follows it after reattachm
   assert.equal(arrowGeometry(reattached, [left, { ...right, x: 240 }], 2).end.x, 190);
   const corner = { x: 154, y: -46 };
   assert.deepEqual(snapEndpoint(corner, [right], 10), corner);
+});
+
+test('pinned endpoints use shape-relative positions and snap near the edge midpoints', () => {
+  const from = pinAttachment(left, { x: 52, y: 15 }, 8);
+  assert.deepEqual(from.anchor, { side: 'right', offset: 0.6 });
+  const items = [{ ...left, x: 20, y: 10, h: 100 }, right];
+  assert.deepEqual(arrowGeometry({ ...flow, from }, items, 2).start, { x: 70, y: 40 });
+  assert.deepEqual(pinAttachment(left, { x: 52, y: 5 }, 8).anchor, { side: 'right', offset: 0 });
+  const store = { ...left, kind: 'store' };
+  assert.deepEqual(pinAttachment(store, { x: 52, y: 8 }, 8).anchor, { side: 'bottom', offset: 1 });
+  assert.deepEqual(pinAttachment(right, { x: 198, y: -50 }, 8).anchor, { angle: -Math.PI / 2 });
+});
+
+test('manual pins take priority over automatic spreading and incompatible pins are identified', () => {
+  const from = pinAttachment(left, { x: 50, y: 0 });
+  const to = pinAttachment(right, { x: 150, y: 0 });
+  const pinned = { ...flow, from, to, control: { t: 0.5, offset: -15 } };
+  const sibling = { ...flow, id: 'sibling' };
+  const items = [left, right, pinned, sibling];
+  const geometry = arrowGeometry(pinned, items, 2);
+  assert.deepEqual(geometry.start, { x: 50, y: 0 });
+  assert.ok(Math.hypot(arrowGeometry(sibling, items, 2).start.y) >= 8);
+  assert.equal(geometry.manualPortsAdjusted, false);
+  const opposite = { ...pinned, from: pinAttachment(left, { x: -50, y: 0 }),
+    to: pinAttachment(right, { x: 250, y: 0 }) };
+  assert.equal(arrowGeometry(opposite, items, 2).manualPortsAdjusted, true);
+  const single = { ...opposite, to: flow.to };
+  const onePin = arrowGeometry(single, items, 2);
+  assert.equal(onePin.manualPortsAdjusted, false);
+  assert.deepEqual(onePin.start, { x: -50, y: 0 });
 });
 
 test('snap target selection ignores annotations and prefers the topmost overlapping shape', () => {

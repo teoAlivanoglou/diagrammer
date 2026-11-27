@@ -144,11 +144,68 @@ function port(node, toward, side) {
     normal: horizontal ? { x: Math.sign(dx), y: 0 } : { x: 0, y: Math.sign(dy) } };
 }
 
+const edgeNormals = {
+  top: { x: 0, y: -1 }, right: { x: 1, y: 0 },
+  bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 },
+};
+
+function pinnedPort(node, anchor) {
+  const rx = node.w / 2;
+  const ry = node.h / 2;
+  if (node.kind === 'process') {
+    const x = Math.cos(anchor.angle);
+    const y = Math.sin(anchor.angle);
+    return { point: { x: node.x + rx * x, y: node.y + ry * y }, normal: unit({ x: x / rx, y: y / ry }) };
+  }
+  const normal = edgeNormals[anchor.side];
+  return { point: {
+    x: node.x + rx * (normal.x || anchor.offset),
+    y: node.y + ry * (normal.y || anchor.offset),
+  }, normal };
+}
+
+export function pinAttachment(node, point, magnet = 0) {
+  const rx = node.w / 2;
+  const ry = node.h / 2;
+  let anchor;
+  if (node.kind === 'process') {
+    const angle = Math.atan2((point.y - node.y) / ry, (point.x - node.x) / rx);
+    const quarter = Math.PI / 2;
+    const cardinal = Math.round(angle / quarter) * quarter;
+    const gap = Math.hypot(rx * (Math.cos(angle) - Math.cos(cardinal)), ry * (Math.sin(angle) - Math.sin(cardinal)));
+    anchor = { angle: gap <= magnet ? cardinal : angle };
+  } else {
+    const dx = point.x - node.x;
+    const dy = point.y - node.y;
+    const sides = node.kind === 'store' ? ['top', 'bottom'] : Object.keys(edgeNormals);
+    let nearest = Infinity;
+    for (const side of sides) {
+      const horizontal = edgeNormals[side].y !== 0;
+      const along = horizontal ? dx : dy;
+      const radius = horizontal ? rx : ry;
+      const offset = Math.max(-1, Math.min(1, along / radius));
+      const candidate = { side, offset };
+      const boundary = pinnedPort(node, candidate).point;
+      const distance = Math.hypot(point.x - boundary.x, point.y - boundary.y);
+      if (distance >= nearest) continue;
+      nearest = distance;
+      anchor = { side, offset: Math.abs(along) <= magnet ? 0 : offset };
+    }
+  }
+  return { node: node.id, anchor };
+}
+
 function basePorts(from, to, flow) {
-  let a = port(from, to, flow.from.side);
-  let b = port(to, from, flow.to.side);
-  if (from.kind === 'store' && to.kind !== 'store') b = port(to, a.point, flow.to.side);
-  if (to.kind === 'store' && from.kind !== 'store') a = port(from, b.point, flow.from.side);
+  const fromPin = flow.from.anchor;
+  const toPin = flow.to.anchor;
+  const aPin = fromPin && pinnedPort(from, fromPin);
+  const bPin = toPin && pinnedPort(to, toPin);
+  let a = aPin || port(from, bPin?.point ?? to, flow.from.side);
+  let b = bPin || port(to, aPin?.point ?? from, flow.to.side);
+  if (!aPin && !bPin) {
+    if (from.kind === 'store' && to.kind !== 'store') b = port(to, a.point, flow.to.side);
+    if (to.kind === 'store' && from.kind !== 'store') a = port(from, b.point, flow.from.side);
+  }
   return [a, b];
 }
 
@@ -208,12 +265,28 @@ function separatedPorts(flow, items, from, to, a, b, stroke) {
     const target = source === from ? to : from;
     const ports = item.id === flow.id ? [a, b] : basePorts(source, target, item);
     const bend = (item.from.node === first.id ? 1 : -1) * (item.control?.offset ?? 0);
-    return { id: item.id, bend, ports: source === from ? ports : ports.reverse() };
+    const peer = item.id === flow.id ? flow : item;
+    const ends = [peer.from, peer.to];
+    return { id: item.id, bend, ports: source === from ? ports : ports.reverse(),
+      ends: source === from ? ends : ends.reverse() };
   }).sort((l, r) => l.bend - r.bend || l.id.localeCompare(r.id));
   return [[from, a], [to, b]].map(([node, attachment], end) => {
+    if ((end === 0 ? flow.from : flow.to).anchor) return attachment;
     const lanes = peers.filter(peer => node.kind === 'process' ||
       (peer.ports[end].normal.x === attachment.normal.x && peer.ports[end].normal.y === attachment.normal.y));
-    return spreadPort(node, attachment, axis, lanes.findIndex(peer => peer.id === flow.id), lanes.length, spacing);
+    const index = lanes.findIndex(peer => peer.id === flow.id);
+    const separated = spreadPort(node, attachment, axis, index, lanes.length, spacing);
+    const pinned = lanes.filter(peer => peer.ends[end].anchor).map(peer => peer.ports[end].point);
+    if (!pinned.length) return separated;
+    const clearance = port => Math.min(...pinned.map(point => Math.hypot(port.point.x - point.x, port.point.y - point.y)));
+    if (clearance(separated) >= spacing / 2) return separated;
+    let best = separated;
+    for (let lane = 0; lane < lanes.length; lane++) {
+      if (lane !== index && !lanes[lane].ends[end].anchor) continue;
+      const candidate = spreadPort(node, attachment, axis, lane, lanes.length, spacing);
+      if (clearance(candidate) > clearance(best)) best = candidate;
+    }
+    return best;
   });
 }
 
@@ -222,8 +295,19 @@ function flowPorts(flow, items, curved = Boolean(flow.control), stroke = 2) {
   const to = endpointPosition(flow.to, items);
   let [a, b] = basePorts(from, to, flow);
   [a, b] = separatedPorts(flow, items, from, to, a, b, stroke);
-  const ports = () => ({ start: a.point, end: b.point, startNormal: a.normal, endNormal: b.normal });
-  if (curved && !constrainControl(midpoint(a.point, b.point), ports())) {
+  let manualPortsAdjusted = false;
+  const ports = () => ({ start: a.point, end: b.point, startNormal: a.normal, endNormal: b.normal, manualPortsAdjusted });
+  const feasible = limitT => constrainControl(midpoint(a.point, b.point), ports(), limitT);
+  if (curved && !feasible(true)) {
+    if (flow.from.anchor || flow.to.anchor) {
+      if (feasible(false)) return ports();
+      // A free endpoint needs no special handling. An automatic port can turn
+      // to face the same way as a pin so the two outward openings intersect.
+      if (flow.from.anchor && !flow.to.anchor && to.w) b = portFacing(to, a.normal);
+      if (flow.to.anchor && !flow.from.anchor && from.w) a = portFacing(from, b.normal);
+      if (feasible(false)) return ports();
+      manualPortsAdjusted = true;
+    }
     // Overlapping shapes can make facing ports incompatible. Use a common
     // outside face so even an overlapping pair has a feasible quadratic.
     const outside = (node, bias) => {
@@ -237,6 +321,13 @@ function flowPorts(flow, items, curved = Boolean(flow.control), stroke = 2) {
     b = outside(to, from.x <= to.x ? 1 : -1);
   }
   return ports();
+}
+
+function portFacing(node, normal) {
+  if (node.kind === 'store') {
+    return pinnedPort(node, { side: normal.y > 0 ? 'bottom' : 'top', offset: 0 });
+  }
+  return port(node, { x: node.x + normal.x * node.w ** 2, y: node.y + normal.y * node.h ** 2 });
 }
 
 const dot = (a, b) => a.x * b.x + a.y * b.y;
@@ -379,7 +470,7 @@ export function arrowGeometry(flow, items, stroke) {
     y: end.y - length * Math.sin(angle + offset),
   }));
   const path = segmentPath({ start, end, control });
-  return { start, end, control, center, wings, path };
+  return { start, end, control, center, wings, path, manualPortsAdjusted: ports.manualPortsAdjusted };
 }
 
 export function segmentPath({ start, control, end }) {

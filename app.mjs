@@ -1,6 +1,6 @@
 import {
   TYPES, FONTS, GRID_SIZE, sampleDiagram, arrowGeometry, flowLabelPosition, normalizeCurves, reverseFlow,
-  curveControlRegion, setCurveControl, snapEndpoint, withCurve, removeItems,
+  curveControlRegion, pinAttachment, setCurveControl, snapEndpoint, withCurve, removeItems,
   alignShapes, distributeShapes, gridPoint, isDiagramShape, itemsInMarquee, marqueeBox, shortcutKey,
 } from './diagram.mjs';
 import { icon } from './icons.mjs';
@@ -171,9 +171,14 @@ function paintTip() {
   let tip = 'Drag empty canvas to select multiple elements';
   if (activeTool === 'flow') tip = pending ? 'Click where the arrow should end.' : 'Click where the arrow should start.';
   else if (activeTool !== 'select') tip = 'Click the canvas to place ' + tools[activeTool].name.toLowerCase() + '.';
-  else if (item?.kind === 'flow') tip = item.control
-    ? 'Drag the label to move it, the square to bend, or a round handle to reconnect.'
-    : 'Drag the label to move it or a round handle to reconnect.';
+  else if (item?.kind === 'flow') {
+    tip = item.control
+      ? 'Drag the square to bend or a round handle to move an attachment.'
+      : 'Drag the label or a round handle to move an attachment.';
+    if (item.control && (item.from.anchor || item.to.anchor) && arrowGeometry(item, state.items, state.stroke).manualPortsAdjusted) {
+      tip = 'The pinned positions cannot form a 120° curve here. Drag an endpoint to adjust it.';
+    }
+  }
   else if (!state.items.length) tip = 'Pick a tool to begin.';
   else if (item && isDiagramShape(item)) tip = 'Shift-click to select more shapes · Double-click to edit a label';
   if (pendingInsert) tip = 'Click the canvas to place the imported elements.';
@@ -261,7 +266,7 @@ function paintCanvas() {
     for (const [key, point] of [['from', g.start], ['to', g.end]]) {
       const attached = Boolean(item[key].node);
       overlays.append(svg('g', { 'data-handle': key, 'data-attached': attached },
-        svg('title', {}, 'Drag the arrow ' + (key === 'from' ? 'start' : 'end') + ' to attach or detach it'),
+        svg('title', {}, 'Drag along a shape to pin this endpoint, or drag away to detach it'),
         svg('circle', { cx: point.x, cy: point.y, r: 10 / zoom, fill: 'transparent' }),
         svg('circle', {
           cx: point.x, cy: point.y, r: 5 / zoom, fill: attached ? '#7057e5' : 'white',
@@ -330,9 +335,23 @@ function sameEndpoint(a, b) {
   return a.node || b.node ? a.node === b.node : Math.hypot(a.x - b.x, a.y - b.y) < 8 / zoom;
 }
 
-function snapDraggedEndpoint(point, flow, handle) {
+function moveEndpoint(point, flow, handle, snapshot) {
   const other = handle === 'from' ? flow.to : flow.from;
-  return snapEndpoint(point, state.items, 14 / zoom, other.node);
+  if (sameEndpoint(snapEndpoint(point, snapshot.items), other)) return flow;
+  const target = snapEndpoint(point, snapshot.items, 14 / zoom, other.node);
+  if (sameEndpoint(target, other)) return flow;
+  const endpoint = target.node
+    ? pinAttachment(snapshot.items.find(item => item.id === target.node), point, 9 / zoom)
+    : target;
+  const original = flow[handle];
+  if (original.node === endpoint.node &&
+      (endpoint.node
+        ? original.anchor?.side === endpoint.anchor.side && original.anchor?.offset === endpoint.anchor.offset &&
+          original.anchor?.angle === endpoint.anchor.angle
+        : original.x === endpoint.x && original.y === endpoint.y)) return flow;
+  const updated = { ...flow, [handle]: endpoint };
+  return updated.control && updated.from.anchor && updated.to.anchor &&
+    arrowGeometry(updated, snapshot.items, snapshot.stroke).manualPortsAdjusted ? null : updated;
 }
 
 function appendItem(kind, props) {
@@ -495,7 +514,7 @@ canvas.addEventListener('pointermove', event => {
     if (drag.type === 'handle') {
       if (item.id !== drag.id) return item;
       if (drag.handle === 'control') return setCurveControl(item, drag.snapshot.items, point, state.stroke);
-      return { ...item, [drag.handle]: snapDraggedEndpoint(point, item, drag.handle) };
+      return moveEndpoint(point, item, drag.handle, drag.snapshot) ?? item;
     }
     if (!selected.has(item.id)) return item;
     if (item.kind !== 'flow') return { ...item, ...move(item) };
@@ -519,14 +538,11 @@ function finishDrag(event, canceled = false) {
     if (canceled) state = snapshot;
     else {
       if (type === 'handle' && handle !== 'control') {
-        const item = itemById(id);
-        const original = snapshot.items.find(entry => entry.id === id)[handle];
-        const other = handle === 'from' ? item.to : item.from;
-        const point = location(event);
-        const target = snapDraggedEndpoint(point, item, handle);
-        if (sameEndpoint(target, other) || sameEndpoint(snapEndpoint(point, state.items), other) ||
-          (target.node && target.node === original.node && target.side === original.side)) state = snapshot;
-        else state = { ...state, items: state.items.map(entry => entry === item ? { ...item, [handle]: target } : entry) };
+        const original = snapshot.items.find(entry => entry.id === id);
+        const updated = moveEndpoint(location(event), original, handle, snapshot);
+        if (!updated) toast('These attachment points cannot form a 120° curve. Try a different edge.');
+        state = !updated || updated === original ? snapshot
+          : { ...snapshot, items: snapshot.items.map(entry => entry === original ? updated : entry) };
       }
       if (state !== snapshot) {
         remember(snapshot);

@@ -29,11 +29,15 @@ const isEndpoint = value => typeof value?.node === 'string'
   : isPoint(value);
 const isControl = value => value && (Object.hasOwn(value, 't')
   ? between(value.t, 0, 1) && between(value.offset, -5e7, 5e7) : isPoint(value));
+const isAnchor = (anchor, node) => anchor == null || (node.kind === 'process'
+  ? between(anchor.angle, -Math.PI, Math.PI)
+  : between(anchor.offset, -1, 1) && (anchor.side === 'top' || anchor.side === 'bottom' ||
+    (node.kind === 'entity' && (anchor.side === 'left' || anchor.side === 'right'))));
 
 function validateItems(items) {
   if (!Array.isArray(items) || items.length > 10000) throw new Error('Invalid diagram elements.');
   const seen = new Set();
-  const nodes = new Set();
+  const nodes = new Map();
   for (const item of items) {
     if (!item || typeof item.id !== 'string' || !item.id || item.id.length > 200 ||
       typeof item.kind !== 'string' || !Object.hasOwn(TYPES, item.kind) ||
@@ -51,12 +55,15 @@ function validateItems(items) {
       if (!isPoint(item) || !between(item.w, 24, 1600) || !between(item.h, 24, 1600)) {
         throw new Error('Invalid shape geometry.');
       }
-      if (isDiagramShape(item)) nodes.add(item.id);
+      if (isDiagramShape(item)) nodes.set(item.id, item);
     }
   }
   for (const item of items) {
     if (item.kind === 'flow' && [item.from, item.to].some(end => 'node' in end && !nodes.has(end.node))) {
       throw new Error('Diagram contains an invalid arrow attachment.');
+    }
+    if (item.kind === 'flow' && [item.from, item.to].some(end => end.node && !isAnchor(end.anchor, nodes.get(end.node)))) {
+      throw new Error('Diagram contains an invalid anchor position.');
     }
   }
 }

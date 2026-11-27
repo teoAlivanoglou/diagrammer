@@ -11,6 +11,19 @@ test('the versioned document preserves Greek text, coordinates, and diagram sett
   assert.deepEqual(roundTrip(diagramFile(diagram)).diagram, diagram);
 });
 
+test('pins survive saving and copying alongside their shape', () => {
+  const diagram = sampleDiagram();
+  const flow = diagram.items.find(item => item.id === 'dispatch');
+  const anchor = { angle: -Math.PI / 2 };
+  flow.from.anchor = anchor;
+  const document = roundTrip(diagramFile(diagram)).diagram;
+  assert.deepEqual(document.items.find(item => item.id === flow.id).from.anchor, anchor);
+  const selection = roundTrip(selectionFile(diagram, new Set([flow.from.node, flow.id])));
+  let id = 0;
+  const copies = instantiateItems(selection.items, { x: 30, y: 10 }, () => 'copy-' + id++);
+  assert.deepEqual(copies.find(item => item.kind === 'flow').from, { node: copies[0].id, anchor });
+});
+
 test('a selection detaches omitted nodes at the rendered arrow endpoint and remaps included nodes', () => {
   const diagram = sampleDiagram();
   const file = roundTrip(selectionFile(diagram, new Set(['order', 'dispatch'])));
