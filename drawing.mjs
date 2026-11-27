@@ -157,15 +157,18 @@ function shape(item, attrs) {
 function drawProgramCall(group, item, geometry, stroke) {
   group.append(svg('path', { d: geometry.path, ...stroke }));
   if (Math.hypot(geometry.end.x - geometry.start.x, geometry.end.y - geometry.start.y) < 1) return;
-  if (item.callArrowhead) group.append(svg('polygon', {
+  group.append(svg('polygon', {
     points: [geometry.end, ...geometry.wings].map(point => point.x + ',' + point.y).join(' '), fill: stroke.stroke,
   }));
-  const couples = item.couples ?? [];
-  const hasPass = couples.some(couple => couple.direction === 'pass');
+  const couples = [
+    { direction: 'pass', label: item.outgoingData, side: item.outgoingSide || 'left' },
+    { direction: 'return', label: item.incomingData, side: item.incomingSide || (item.outgoingData?.trim() ? 'right' : 'left') },
+  ];
   const inset = 11 + stroke['stroke-width'] / 2;
   const lanes = { left: inset, right: inset };
   for (const couple of couples) {
-    const side = couple.side || (hasPass && couple.direction === 'return' ? 'right' : 'left');
+    if (!couple.label?.trim()) continue;
+    const { side } = couple;
     const { start, end, axis, outward, center, half } = programCoupleGeometry(geometry, couple.direction, side, lanes[side]);
     const radius = Math.min(4, half * 0.36);
     const head = Math.min(8, half * 0.7);
@@ -176,20 +179,16 @@ function drawProgramCall(group, item, geometry, stroke) {
     }));
     group.append(svg('g', { 'data-couple': couple.direction },
       svg('path', { d: segmentPath({ start: startOfShaft, end: headBase }), ...stroke }),
-      svg('circle', { cx: start.x, cy: start.y, r: radius, ...stroke,
-        fill: couple.tail === 'filled' ? stroke.stroke : 'none' }),
+      svg('circle', { cx: start.x, cy: start.y, r: radius, ...stroke }),
       svg('polygon', { points: [end, ...wings].map(point => point.x + ',' + point.y).join(' '), fill: stroke.stroke }),
     ));
-    let labelSpace = 0;
-    if (couple.label.trim()) {
-      const annotation = { ...item, label: couple.label };
-      const metrics = measureLabel(annotation);
-      const { width, height } = labelInkSize(metrics, annotation.size);
-      labelSpace = (Math.abs(outward.x) * width + Math.abs(outward.y) * height) / 2;
-      const gap = 7 + labelSpace;
-      group.append(label(annotation, center.x + outward.x * gap, center.y + outward.y * gap, 'middle', metrics));
-    }
-    lanes[side] += (labelSpace ? 18 : 13) + 2 * labelSpace;
+    const annotation = { ...item, label: couple.label };
+    const metrics = measureLabel(annotation);
+    const { width, height } = labelInkSize(metrics, annotation.size);
+    const labelSpace = (Math.abs(outward.x) * width + Math.abs(outward.y) * height) / 2;
+    const gap = 7 + labelSpace;
+    group.append(label(annotation, center.x + outward.x * gap, center.y + outward.y * gap, 'middle', metrics));
+    lanes[side] += 18 + 2 * labelSpace;
   }
 }
 

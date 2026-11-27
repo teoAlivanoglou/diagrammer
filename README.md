@@ -46,9 +46,9 @@ Start and end dots use automatic attachment. The transition follows the dot cent
 
 ## Program structure diagrams
 
-Open **PSD** in the Toolbox. Press **M** to place a module and **A** to draw a straight call from the calling module to the called module. When the parent is wide enough, its call attachment lines up above the child. Turn on **Call arrowhead** in Properties for a pointed call line.
+Open **PSD** in the Toolbox. Press **M** to place a module and **A** to draw a straight call from the calling module to the called module. The call arrow points to the child. When the parent is wide enough, its call attachment lines up above the child.
 
-Select a call and choose **Add couple** for a short arrow beside it. Choose **Pass** for parent-to-child or **Return** for child-to-parent. Each couple has a hollow or filled tail, an optional multiline label, and a side setting. Couples move with their call when a module is moved or resized.
+Select a call and enter **Outgoing data** for parent-to-child or **Incoming data** for child-to-parent. Enter several values on separate lines if needed. A field with text shows a short arrow with a hollow tail beside the call. Clear the field to hide that arrow. You can choose which side each arrow sits on.
 
 ## Curve debugging
 

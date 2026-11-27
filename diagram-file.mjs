@@ -1,4 +1,4 @@
-import { arrowGeometry, FONTS, isDiagramShape, isStateMarker, normalizeCurves, setCurveControl, TYPES } from './diagram.mjs';
+import { arrowGeometry, FONTS, isDiagramShape, isStateMarker, normalizeItems, setCurveControl, TYPES } from './diagram.mjs';
 
 const marker = { format: 'diagrammer', version: 3 };
 export const MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -35,10 +35,11 @@ const isAnchor = (anchor, node) => anchor == null || (node.kind === 'process' ||
   : between(anchor.offset, -1, 1) && (anchor.side === 'top' || anchor.side === 'bottom' ||
     (node.kind !== 'store' && (anchor.side === 'left' || anchor.side === 'right'))));
 
+const isCoupleSide = side => side == null || side === '' || side === 'left' || side === 'right';
 const isCouple = couple => couple && typeof couple.label === 'string' &&
   (couple.direction === 'pass' || couple.direction === 'return') &&
   (couple.tail === 'open' || couple.tail === 'filled') &&
-  (couple.side == null || couple.side === '' || couple.side === 'left' || couple.side === 'right');
+  isCoupleSide(couple.side);
 
 function validateItems(items) {
   if (!Array.isArray(items) || items.length > 10000) throw new Error('Invalid diagram elements.');
@@ -56,6 +57,9 @@ function validateItems(items) {
         (item.notation != null && item.notation !== 'sfd' && item.notation !== 'psd') ||
         (item.notation === 'psd' && (item.control != null ||
           (item.callArrowhead != null && typeof item.callArrowhead !== 'boolean') ||
+          (item.outgoingData != null && typeof item.outgoingData !== 'string') ||
+          (item.incomingData != null && typeof item.incomingData !== 'string') ||
+          !isCoupleSide(item.outgoingSide) || !isCoupleSide(item.incomingSide) ||
           (item.couples != null && (!Array.isArray(item.couples) || !item.couples.every(isCouple))))) ||
         (item.control != null && !isControl(item.control)) ||
         (item.labelPosition != null && (!between(item.labelPosition.t, -1e8, 1e8) ||
@@ -93,11 +97,11 @@ export function decodeFile(text) {
     if (typeof diagram?.title !== 'string' || diagram.title.length > 70 ||
       !between(diagram.stroke, 0.5, 8)) throw new Error('Invalid diagram settings.');
     validateItems(diagram.items);
-    file.diagram.items = normalizeCurves(diagram.items, diagram.stroke);
+    file.diagram.items = normalizeItems(diagram.items, diagram.stroke);
   } else if (file.type === 'selection') {
     validateItems(file.items);
     if (!file.items.length) throw new Error('The shape set is empty.');
-    file.items = normalizeCurves(file.items);
+    file.items = normalizeItems(file.items);
   } else throw new Error('Unknown Diagrammer file type.');
   return file;
 }
@@ -106,7 +110,7 @@ export function instantiateItems(items, offset, makeId = () => crypto.randomUUID
   const ids = new Map(items.map(item => [item.id, makeId()]));
   const translate = point => ({ x: point.x + offset.x, y: point.y + offset.y });
   const endpoint = value => value.node ? { ...value, node: ids.get(value.node) } : translate(value);
-  return normalizeCurves(items).map(item => {
+  return normalizeItems(items).map(item => {
     const id = ids.get(item.id);
     return item.kind === 'flow'
       ? { ...item, id, from: endpoint(item.from), to: endpoint(item.to) }

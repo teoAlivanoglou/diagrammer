@@ -5,20 +5,28 @@ import { decodeFile, diagramFile, instantiateItems, selectionFile } from './diag
 
 const roundTrip = value => decodeFile(JSON.stringify(value));
 
-test('PSD calls preserve couples in saved diagrams and in copied selections', () => {
+test('PSD calls migrate old couples into two data fields and preserve them when copied', () => {
   const parent = { kind: 'module', id: 'parent', x: 0, y: 0, w: 180, h: 50,
     label: 'Μονάδα ελέγχου', font: 'Arial', size: 16 };
   const child = { ...parent, id: 'child', y: 200, label: 'Υπολογισμός' };
   const call = { kind: 'flow', notation: 'psd', id: 'call', from: { node: parent.id }, to: { node: child.id },
-    control: null, callArrowhead: true, label: '', font: 'Arial', size: 14, couples: [
+    control: null, callArrowhead: false, label: '', font: 'Arial', size: 14, couples: [
       { direction: 'pass', tail: 'open', label: 'ΤΑΧ\nΑπόσταση' },
+      { direction: 'pass', tail: 'filled', label: '   ' },
+      { direction: 'pass', tail: 'filled', label: 'Μέση ταχύτητα' },
       { direction: 'return', tail: 'filled', side: 'right', label: 'Χρόνος' },
     ] };
   const diagram = { title: 'Δομή', stroke: 2, items: [parent, child, call] };
-  assert.deepEqual(roundTrip(diagramFile(diagram)).diagram, diagram);
+  const migrated = roundTrip(diagramFile(diagram)).diagram;
+  const updated = migrated.items.at(-1);
+  assert.equal(updated.outgoingData, 'ΤΑΧ\nΑπόσταση\nΜέση ταχύτητα');
+  assert.equal(updated.incomingData, 'Χρόνος');
+  assert.equal(updated.incomingSide, 'right');
+  assert.equal(updated.couples, undefined);
+  assert.equal(updated.callArrowhead, undefined);
+  assert.deepEqual(roundTrip(diagramFile(migrated)).diagram, migrated);
   const selection = roundTrip(selectionFile(diagram, new Set(['parent', 'call'])));
-  assert.deepEqual(selection.items.at(-1).to, { x: 0, y: 175 });
-  assert.deepEqual(selection.items.at(-1).couples, call.couples);
+  assert.deepEqual(selection.items.at(-1), { ...updated, to: { x: 0, y: 175 } });
   const invalid = { ...call, control: { t: 0.5, offset: 40 } };
   assert.throws(() => roundTrip(diagramFile({ ...diagram, items: [parent, child, invalid] })), /arrow geometry/);
 });

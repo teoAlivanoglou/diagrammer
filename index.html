@@ -117,10 +117,24 @@
               <button id="reset-label" class="button full" hidden>Reset label layout</button>
             </div>
             <div id="call-fields" hidden>
-              <label class="snap-setting"><input id="call-arrowhead" type="checkbox"> Call arrowhead</label>
-              <p class="field" id="couples-heading">Couples</p>
-              <div id="couples" aria-labelledby="couples-heading"></div>
-              <button id="add-couple" class="button full" type="button" data-icon-prefix="plus">Add couple</button>
+              <div class="call-data-heading">
+                <label class="field" for="outgoing-data">Outgoing data</label>
+                <select id="outgoing-side" aria-label="Outgoing arrow side">
+                  <option value="">Auto side</option>
+                  <option value="left">Left side</option>
+                  <option value="right">Right side</option>
+                </select>
+              </div>
+              <textarea id="outgoing-data" rows="2" placeholder="Parent → child"></textarea>
+              <div class="call-data-heading">
+                <label class="field" for="incoming-data">Incoming data</label>
+                <select id="incoming-side" aria-label="Incoming arrow side">
+                  <option value="">Auto side</option>
+                  <option value="left">Left side</option>
+                  <option value="right">Right side</option>
+                </select>
+              </div>
+              <textarea id="incoming-data" rows="2" placeholder="Child → parent"></textarea>
             </div>
           </div>
           <div id="arrange" hidden>
@@ -149,26 +163,5 @@
     </aside>
   </main>
   <input id="json-file" type="file" accept=".json,application/json" hidden>
-  <template id="couple-row">
-    <div class="couple-row">
-      <textarea rows="2" data-couple-field="label" aria-label="Couple label" placeholder="Data or signal"></textarea>
-      <div class="couple-options">
-        <select data-couple-field="direction" aria-label="Couple direction">
-          <option value="pass">Pass ↓</option>
-          <option value="return">Return ↑</option>
-        </select>
-        <select data-couple-field="tail" aria-label="Couple tail">
-          <option value="open">○ Hollow</option>
-          <option value="filled">● Filled</option>
-        </select>
-        <select data-couple-field="side" aria-label="Couple side">
-          <option value="">Auto side</option>
-          <option value="left">Left side</option>
-          <option value="right">Right side</option>
-        </select>
-        <button class="icon-btn" type="button" data-remove-couple aria-label="Remove couple" title="Remove couple">×</button>
-      </div>
-    </div>
-  </template>
 </body>
 </html>

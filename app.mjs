@@ -1,5 +1,5 @@
 import {
-  TYPES, FONTS, GRID_SIZE, sampleDiagram, arrowGeometry, flowLabelPosition, normalizeCurves, reverseFlow,
+  TYPES, FONTS, GRID_SIZE, sampleDiagram, arrowGeometry, flowLabelPosition, normalizeItems, reverseFlow,
   centerAttachment, curveControlRegion, pinAttachment, setCurveControl, snapEndpoint, withCurve, removeItems,
   alignShapes, distributeShapes, gridPoint, isDiagramShape, itemsInMarquee, marqueeBox, shortcutKey,
   isStateLoop, isStateMarker, isStateShape, stateLoop, swapTransitionLabelSide,
@@ -27,6 +27,10 @@ const notationTools = {
   psd: ['module', 'call'],
 };
 const arrowTools = { flow: 'dfd', transition: 'sfd', call: 'psd' };
+const callFields = {
+  'outgoing-data': 'outgoingData', 'incoming-data': 'incomingData',
+  'outgoing-side': 'outgoingSide', 'incoming-side': 'incomingSide',
+};
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
 let state = load();
@@ -58,7 +62,7 @@ function load() {
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey));
     if (saved && Array.isArray(saved.items) && Number.isFinite(saved.stroke)) {
-      return { ...saved, items: normalizeFlowLabels(normalizeCurves(saved.items, saved.stroke), saved.stroke) };
+      return { ...saved, items: normalizeFlowLabels(normalizeItems(saved.items, saved.stroke), saved.stroke) };
     }
   } catch { /* Use the example when local storage is unavailable. */ }
   return sampleDiagram();
@@ -201,7 +205,7 @@ function paintTip() {
   }
   else if (activeTool !== 'select') tip = 'Click the canvas to place ' + tools[activeTool].name.toLowerCase() + '.';
   else if (item?.kind === 'flow') {
-    tip = item.notation === 'psd' ? 'Add data or signal arrows under Couples in Properties.' : item.control
+    tip = item.notation === 'psd' ? 'Enter outgoing or incoming data in Properties to show its arrow.' : item.control
       ? 'Drag the square to bend or a round handle to move an attachment.'
       : 'Drag the label or a round handle to move an attachment.';
     if (item.control && (item.from.anchor || item.to.anchor) && arrowGeometry(item, state.items, state.stroke).manualPortsAdjusted) {
@@ -237,7 +241,9 @@ function paintSelection() {
   $('dimensions').hidden = item.kind === 'flow' || item.kind === 'text' || isStateMarker(item);
   $('flow-fields').hidden = item.kind !== 'flow' || programCall;
   $('call-fields').hidden = !programCall;
-  if (programCall) paintCouples(item);
+  if (programCall) {
+    for (const [id, field] of Object.entries(callFields)) keepValue(id, item[field] ?? '');
+  }
   if (item.kind === 'flow') {
     $('straight').disabled = Boolean(isStateLoop(item));
     $('transition-label-actions').hidden = item.notation !== 'sfd' || !item.label.trim();
@@ -251,24 +257,6 @@ function paintSelection() {
     keepValue('width', Math.round(item.w));
     keepValue('height', Math.round(item.h));
   }
-}
-
-function paintCouples(call) {
-  $('call-arrowhead').checked = Boolean(call.callArrowhead);
-  const list = $('couples');
-  const couples = call.couples ?? [];
-  if (list.children.length !== couples.length) {
-    list.replaceChildren(...couples.map(() => $('couple-row').content.cloneNode(true)));
-  }
-  couples.forEach((couple, index) => {
-    const row = list.children[index];
-    row.dataset.index = index;
-    for (const field of row.querySelectorAll('[data-couple-field]')) {
-      if (field !== document.activeElement || field.tagName === 'SELECT') {
-        field.value = couple[field.dataset.coupleField] ?? '';
-      }
-    }
-  });
 }
 
 function paintCurveDebug() {
@@ -464,7 +452,7 @@ function insertItems(items, offset) {
 function focusLabel() {
   const item = onlySelected();
   if (item?.notation === 'psd') {
-    ($('couples').querySelector('textarea') ?? $('add-couple')).focus();
+    $('outgoing-data').focus();
     return;
   }
   if (isStateMarker(item ?? {})) return;
@@ -719,32 +707,15 @@ $('rotate-label').addEventListener('click', () => updateItem(onlySelected(), ite
 $('reset-label').addEventListener('click', () => updateItem(onlySelected(), {
   labelOffset: null, labelPosition: null, labelOpposite: null, labelUpsideDown: null,
 }));
-$('call-arrowhead').addEventListener('change', event => {
-  updateItem(onlySelected(), { callArrowhead: event.target.checked });
-});
-$('add-couple').addEventListener('click', () => {
-  const call = onlySelected();
-  if (call?.notation !== 'psd') return;
-  updateItem(call, { couples: [...(call.couples ?? []), { label: '', direction: 'pass', tail: 'open' }] });
-  $('couples').lastElementChild.querySelector('textarea').focus();
-});
-$('couples').addEventListener('input', event => {
-  const field = event.target.dataset.coupleField;
-  const call = onlySelected();
-  if (!field || call?.notation !== 'psd') return;
-  const index = Number(event.target.closest('.couple-row').dataset.index);
-  const couples = call.couples.map((couple, i) => i === index ? { ...couple, [field]: event.target.value } : couple);
-  updateItem(call, { couples }, field === 'label' ? 'couple-label-' + index : null);
-});
-$('couples').addEventListener('focusout', () => { editingField = null; });
-$('couples').addEventListener('click', event => {
-  const remove = event.target.closest('[data-remove-couple]');
-  const call = onlySelected();
-  if (!remove || call?.notation !== 'psd') return;
-  const index = Number(remove.closest('.couple-row').dataset.index);
-  updateItem(call, { couples: call.couples.filter((_, i) => i !== index) });
-  $('add-couple').focus();
-});
+for (const [id, field] of Object.entries(callFields)) {
+  const input = $(id);
+  const text = input.tagName === 'TEXTAREA';
+  input.addEventListener(text ? 'input' : 'change', () => {
+    const call = onlySelected();
+    if (call?.notation === 'psd') updateItem(call, { [field]: input.value }, text ? id : null);
+  });
+  if (text) input.addEventListener('blur', () => { editingField = null; });
+}
 $('font').addEventListener('change', event => {
   updateItem(onlySelected(), { font: event.target.value });
   canvas.focus({ preventScroll: true });

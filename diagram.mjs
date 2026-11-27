@@ -544,10 +544,22 @@ export function setCurveControl(flow, items, point, stroke = 2) {
   return { ...flow, control: relativeControl(point, start, end) };
 }
 
-export function normalizeCurves(items, stroke = 2) {
+export function normalizeItems(items, stroke = 2) {
   return items.map(item => {
     if (item.kind !== 'flow') return item;
-    if (item.notation === 'psd' && item.control) return { ...item, control: null };
+    if (item.notation === 'psd') {
+      if (!item.control && !item.couples && !Object.hasOwn(item, 'callArrowhead')) return item;
+      const { couples, callArrowhead, ...call } = item;
+      call.control = null;
+      for (const [direction, field] of [['pass', 'outgoing'], ['return', 'incoming']]) {
+        const legacy = (couples ?? []).filter(couple => couple.direction === direction && couple.label.trim());
+        if (!legacy.length) continue;
+        call[field + 'Data'] ??= legacy.map(couple => couple.label).join('\n');
+        const side = legacy.find(couple => couple.side)?.side;
+        if (side) call[field + 'Side'] ??= side;
+      }
+      return call;
+    }
     if (isStateLoop(item) && !item.control) return { ...item, ...stateLoop(item.from.node) };
     return item.control && !Number.isFinite(item.control.t) ? setCurveControl(item, items, item.control, stroke) : item;
   });
@@ -833,7 +845,7 @@ export function sampleDiagram() {
   return {
     title: 'Order processing',
     stroke: 2,
-    items: normalizeCurves([
+    items: normalizeItems([
       label('customer', 'entity', -267, -67, 'Πελάτης'),
       label('order', 'process', 0, -67, '1.0\nΕπεξεργασία\nπαραγγελίας', { w: 152, h: 152 }),
       label('warehouse', 'entity', 267, -67, 'Αποθήκη'),
