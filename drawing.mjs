@@ -1,4 +1,4 @@
-import { arrowGeometry, flowLabelPlacement, FONTS, isDiagramShape, segmentPath, visibleFlow } from './diagram.mjs';
+import { arrowGeometry, flowLabelPlacement, flowLabelPosition, FONTS, isDiagramShape, segmentPath, visibleFlow } from './diagram.mjs';
 
 const SVG = 'http://www.w3.org/2000/svg';
 export const INK = '#25324a';
@@ -89,6 +89,21 @@ export function labelInkSize(metrics, size) {
 export function flowLabelBox({ x, y, anchor }, { width, height }, padding) {
   const left = x - width * (anchor === 'start' ? 0 : anchor === 'end' ? 1 : 0.5);
   return { x: left - padding, y: y - height / 2 - padding, width: width + 2 * padding, height: height + 2 * padding };
+}
+
+export function flowLabelCenter(item, geometry, stroke) {
+  const size = labelInkSize(measureLabel(item), item.size);
+  const box = flowLabelBox(flowLabelPlacement(item, geometry, stroke, size), size, 0);
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
+
+export function normalizeFlowLabels(items, stroke) {
+  return items.map(item => {
+    if (item.kind !== 'flow' || !item.labelOffset || item.labelPosition) return item;
+    const geometry = arrowGeometry(item, items, stroke);
+    const center = flowLabelCenter(item, geometry, stroke);
+    return { ...item, labelOffset: null, labelPosition: flowLabelPosition(geometry, center) };
+  });
 }
 
 function label(item, x, y, anchor = 'middle', metrics = measureLabel(item)) {

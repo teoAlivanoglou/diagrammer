@@ -1,10 +1,10 @@
 import {
-  TYPES, FONTS, GRID_SIZE, sampleDiagram, arrowGeometry, normalizeCurves, reverseFlow,
+  TYPES, FONTS, GRID_SIZE, sampleDiagram, arrowGeometry, flowLabelPosition, normalizeCurves, reverseFlow,
   setCurveControl, snapEndpoint, withCurve, removeItems,
   alignShapes, distributeShapes, gridPoint, isDiagramShape, itemsInMarquee, marqueeBox, shortcutKey,
 } from './diagram.mjs';
 import { icon } from './icons.mjs';
-import { svg, drawItem, drawItems, imageBounds, renderPng } from './drawing.mjs';
+import { svg, drawItem, drawItems, flowLabelCenter, imageBounds, normalizeFlowLabels, renderPng } from './drawing.mjs';
 import { renderWord } from './word.mjs';
 import { decodeFile, diagramFile, instantiateItems, MAX_FILE_BYTES, selectionFile } from './diagram-file.mjs';
 
@@ -39,7 +39,7 @@ function load() {
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey));
     if (saved && Array.isArray(saved.items) && Number.isFinite(saved.stroke)) {
-      return { ...saved, items: normalizeCurves(saved.items, saved.stroke) };
+      return { ...saved, items: normalizeFlowLabels(normalizeCurves(saved.items, saved.stroke), saved.stroke) };
     }
   } catch { /* Use the example when local storage is unavailable. */ }
   return sampleDiagram();
@@ -190,7 +190,7 @@ function paintSelection() {
   $('dimensions').hidden = item.kind === 'flow' || item.kind === 'text';
   $('flow-fields').hidden = item.kind !== 'flow';
   if (item.kind === 'flow') {
-    $('reset-label').hidden = !item.label || !item.labelOffset;
+    $('reset-label').hidden = !item.label || !(item.labelPosition || item.labelOffset);
     for (const [id, active] of [['straight', !item.control], ['curve', Boolean(item.control)]]) {
       $(id).classList.toggle('active', active);
       $(id).setAttribute('aria-pressed', active);
@@ -405,7 +405,8 @@ canvas.addEventListener('pointerdown', event => {
   }
   lastClick = event.shiftKey ? null : click;
   if (!event.shiftKey && event.target.closest('[data-flow-label]')) {
-    beginDrag(event, 'label', { id: item.id });
+    const geometry = arrowGeometry(item, state.items, state.stroke);
+    beginDrag(event, 'label', { id: item.id, geometry, labelCenter: flowLabelCenter(item, geometry, state.stroke) });
   } else if (!event.shiftKey && (item.kind !== 'flow' || (!item.from.node && !item.to.node))) {
     beginDrag(event, 'move', { anchor: item.kind === 'flow' ? null : item });
   }
@@ -456,7 +457,8 @@ canvas.addEventListener('pointermove', event => {
   const move = p => ({ x: p.x + offsetX, y: p.y + offsetY });
   const items = drag.snapshot.items.map(item => {
     if (drag.type === 'label') {
-      return item.id === drag.id ? { ...item, labelOffset: move(item.labelOffset ?? { x: 0, y: 0 }) } : item;
+      return item.id === drag.id
+        ? { ...item, labelOffset: null, labelPosition: flowLabelPosition(drag.geometry, move(drag.labelCenter)) } : item;
     }
     if (drag.type === 'handle') {
       if (item.id !== drag.id) return item;
@@ -560,7 +562,7 @@ for (const button of document.querySelectorAll('[data-space]')) {
 $('straight').addEventListener('click', () => updateItem(onlySelected(), item => withCurve(item, false, state.items, state.stroke)));
 $('curve').addEventListener('click', () => updateItem(onlySelected(), item => withCurve(item, true, state.items, state.stroke)));
 $('reverse').addEventListener('click', () => updateItem(onlySelected(), item => reverseFlow(item, state.items)));
-$('reset-label').addEventListener('click', () => updateItem(onlySelected(), { labelOffset: null }));
+$('reset-label').addEventListener('click', () => updateItem(onlySelected(), { labelOffset: null, labelPosition: null }));
 $('font').addEventListener('change', event => {
   updateItem(onlySelected(), { font: event.target.value });
   canvas.focus({ preventScroll: true });
@@ -643,10 +645,10 @@ $('json-file').addEventListener('change', async event => {
       if (decoded.type !== 'diagram') throw new Error('Use Import and place for a shape set.');
       selected = new Set();
       setTool('select');
-      update(decoded.diagram);
+      update({ ...decoded.diagram, items: normalizeFlowLabels(decoded.diagram.items, decoded.diagram.stroke) });
       fitDiagram();
     } else {
-      const items = decoded.diagram?.items ?? decoded.items;
+      const items = normalizeFlowLabels(decoded.diagram?.items ?? decoded.items, decoded.diagram?.stroke ?? state.stroke);
       if (!items.length) throw new Error('The file has no elements to place.');
       const bounds = imageBounds({ ...state, items }, items);
       setTool('select');
@@ -720,6 +722,7 @@ document.addEventListener('paste', event => {
   try { file = decodeFile(text); } catch { return; }
   if (file.type !== 'selection') return;
   event.preventDefault();
+  const items = normalizeFlowLabels(file.items, state.stroke);
   const rect = canvas.getBoundingClientRect();
   const cursor = pointerOnCanvas;
   const point = cursor && cursor.clientX >= rect.left && cursor.clientX <= rect.right &&
@@ -728,7 +731,7 @@ document.addEventListener('paste', event => {
   const last = previousPaste?.target;
   const sameTarget = (!target && !last) || (target && last && Math.hypot(target.x - last.x, target.y - last.y) < 1);
   const count = previousPaste?.text === text && sameTarget ? previousPaste.count + 1 : 1;
-  const bounds = imageBounds({ ...state, items: file.items }, file.items);
+  const bounds = imageBounds({ ...state, items }, items);
   const x = bounds.x + bounds.width / 2;
   const y = bounds.y + bounds.height / 2;
   const gap = count * GRID_SIZE;
@@ -736,9 +739,9 @@ document.addEventListener('paste', event => {
     Math.abs(y + gap - center.y) < surface.clientHeight / zoom / 2;
   if (target) {
     const shift = (count - 1) * GRID_SIZE;
-    insertItems(file.items, { x: target.x - x + shift, y: target.y - y + shift });
+    insertItems(items, { x: target.x - x + shift, y: target.y - y + shift });
   } else {
-    insertItems(file.items, visible ? { x: gap, y: gap } : { x: center.x - x, y: center.y - y });
+    insertItems(items, visible ? { x: gap, y: gap } : { x: center.x - x, y: center.y - y });
   }
   previousPaste = { text, target, count: target || visible ? count : 0 };
   canvas.focus({ preventScroll: true });

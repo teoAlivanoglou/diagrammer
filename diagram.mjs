@@ -314,7 +314,9 @@ export function reverseFlow(flow, items) {
   const { control } = flow.control && !Number.isFinite(flow.control.t)
     ? setCurveControl(flow, items, flow.control) : flow;
   return { ...flow, from: flow.to, to: flow.from,
-    control: control ? { t: 1 - control.t, offset: -control.offset } : null };
+    control: control ? { t: 1 - control.t, offset: -control.offset } : null,
+    ...(flow.labelPosition && { labelPosition: { t: 1 - flow.labelPosition.t, offset: -flow.labelPosition.offset } }),
+  };
 }
 
 export function arrowGeometry(flow, items, stroke) {
@@ -429,10 +431,49 @@ function curvedLabelPosition(control, geometry, stroke, box) {
   return { x: center.x + nx * gap, y: center.y + ny * gap, anchor: 'middle' };
 }
 
+function labelFrame(geometry, t, frame) {
+  const { start, control } = geometry;
+  const { axis, normal, length } = frame;
+  const along = t * Math.max(1, length);
+  let across = 0;
+  if (control && length >= 1 && t > 0 && t < 1) {
+    const bend = difference(control, start);
+    const c = Math.max(0, Math.min(1, dot(bend, axis) / length));
+    // Solve t = 2c(1-u)u + u² for the curve parameter at this chord position.
+    const discriminant = Math.max(0, c * c + (1 - 2 * c) * t);
+    const u = t / (c + Math.sqrt(discriminant));
+    across = 2 * u * (1 - u) * dot(bend, normal);
+  }
+  return { x: start.x + axis.x * along + normal.x * across, y: start.y + axis.y * along + normal.y * across };
+}
+
+export function flowLabelPosition(geometry, point) {
+  const frame = chordFrame(geometry.start, geometry.end);
+  const t = dot(difference(point, geometry.start), frame.axis) / Math.max(1, frame.length);
+  const base = labelFrame(geometry, t, frame);
+  return { t, offset: dot(difference(point, base), frame.normal) };
+}
+
 export function flowLabelPlacement(item, geometry, stroke, box) {
   const { start, end, center } = geometry;
+  if (item.labelPosition) {
+    const { t, offset } = item.labelPosition;
+    const frame = chordFrame(start, end);
+    const base = labelFrame(geometry, t, frame);
+    return { x: base.x + frame.normal.x * offset, y: base.y + frame.normal.y * offset, anchor: 'middle' };
+  }
   let placement;
-  if (item.control) {
+  if (geometry.control && !item.labelOffset && Number.isFinite(item.control?.offset)) {
+    const frame = chordFrame(start, end);
+    const side = Math.sign(item.control.offset) || -1;
+    const outward = { x: frame.normal.x * side, y: frame.normal.y * side };
+    const base = labelFrame(geometry, 0.5, frame);
+    const clearance = Math.max(0, ...[start, end, center, ...geometry.wings]
+      .map(point => dot(difference(point, base), outward)));
+    const radius = (Math.abs(outward.x) * box.width + Math.abs(outward.y) * box.height) / 2;
+    const gap = radius + clearance + 6 + stroke / 2;
+    placement = { x: base.x + outward.x * gap, y: base.y + outward.y * gap, anchor: 'middle' };
+  } else if (geometry.control) {
     placement = curvedLabelPosition(geometry.control, geometry, stroke, box);
   } else if (Math.abs(end.y - start.y) > Math.abs(end.x - start.x)) {
     placement = { x: center.x + 10, y: center.y, anchor: 'start' };

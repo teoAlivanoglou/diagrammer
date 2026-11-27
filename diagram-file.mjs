@@ -1,6 +1,6 @@
 import { arrowGeometry, FONTS, isDiagramShape, normalizeCurves, setCurveControl, TYPES } from './diagram.mjs';
 
-const marker = { format: 'diagrammer', version: 2 };
+const marker = { format: 'diagrammer', version: 3 };
 export const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
 export const diagramFile = diagram => ({ ...marker, type: 'diagram', diagram });
@@ -44,6 +44,8 @@ function validateItems(items) {
     if (item.kind === 'flow') {
       if (!isEndpoint(item.from) || !isEndpoint(item.to) ||
         (item.control != null && !isControl(item.control)) ||
+        (item.labelPosition != null && (!between(item.labelPosition.t, -1e8, 1e8) ||
+          !between(item.labelPosition.offset, -5e7, 5e7))) ||
         (item.labelOffset != null && !isPoint(item.labelOffset))) throw new Error('Invalid arrow geometry.');
     } else {
       if (!isPoint(item) || !between(item.w, 24, 1600) || !between(item.h, 24, 1600)) {
@@ -64,7 +66,7 @@ export function decodeFile(text) {
   let file;
   try { file = JSON.parse(text); } catch { throw new Error('This file is not valid JSON.'); }
   if (file?.format !== marker.format) throw new Error('Choose a Diagrammer JSON file.');
-  if (file.version !== 1 && file.version !== marker.version) throw new Error('This Diagrammer file version is unsupported.');
+  if (![1, 2, marker.version].includes(file.version)) throw new Error('This Diagrammer file version is unsupported.');
   if (file.type === 'diagram') {
     const diagram = file.diagram;
     if (typeof diagram?.title !== 'string' || diagram.title.length > 70 ||

@@ -7,7 +7,7 @@ const roundTrip = value => decodeFile(JSON.stringify(value));
 
 test('the versioned document preserves Greek text, coordinates, and diagram settings', () => {
   const diagram = sampleDiagram();
-  diagram.items.find(item => item.id === 'record').labelOffset = { x: 9, y: 12 };
+  diagram.items.find(item => item.id === 'record').labelPosition = { t: 0.25, offset: 12 };
   assert.deepEqual(roundTrip(diagramFile(diagram)).diagram, diagram);
 });
 

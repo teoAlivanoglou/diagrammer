@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { alignShapes, arrowGeometry, visibleCurve, distributeShapes, flowLabelPlacement, gridPoint, itemsInMarquee, marqueeBox, removeItems, sampleDiagram, shortcutKey, snapEndpoint, withCurve } from './diagram.mjs';
+import { alignShapes, arrowGeometry, visibleCurve, distributeShapes, flowLabelPlacement, flowLabelPosition, gridPoint, itemsInMarquee, marqueeBox, removeItems, reverseFlow, sampleDiagram, shortcutKey, snapEndpoint, withCurve } from './diagram.mjs';
 import { centerLabelLines, wrapLabel } from './drawing.mjs';
 import { renderWord } from './word.mjs';
 
@@ -145,6 +145,28 @@ test('moving a label applies an offset from its automatic position', () => {
   const adjusted = flowLabelPlacement({ ...item, labelOffset: { x: 30, y: -9 } }, geometry, 2, box);
   assert.equal(adjusted.x, automatic.x + 30);
   assert.equal(adjusted.y, automatic.y - 9);
+});
+
+test('a dragged label keeps its position along the curve and its perpendicular offset after a rotation', () => {
+  const item = { id: 'arrow', from: { x: 0, y: 0 }, to: { x: 100, y: 0 },
+    control: { t: 0.5, offset: -40 }, label: 'Test', size: 14 };
+  const geometry = arrowGeometry(item, [], 2);
+  const labelPosition = flowLabelPosition(geometry, { x: 25, y: -5 });
+  assert.deepEqual(labelPosition, { t: 0.25, offset: 10 });
+  const moved = { ...item, labelPosition, to: { x: 0, y: 200 } };
+  const placement = flowLabelPlacement(moved, arrowGeometry(moved, [], 2), 2, { width: 50, height: 10 });
+  assert.deepEqual(placement, { x: 5, y: 50, anchor: 'middle' });
+  const reversed = reverseFlow(moved, []);
+  assert.deepEqual(flowLabelPlacement(reversed, arrowGeometry(reversed, [], 2), 2, { width: 50, height: 10 }), placement);
+});
+
+test('automatic labels stay over the same part of the chord when the bend slides', () => {
+  const item = { from: { x: 0, y: 0 }, to: { x: 200, y: 0 }, label: 'Test', size: 14 };
+  for (const t of [0.2, 0.8]) {
+    const curved = { ...item, control: { t, offset: -80 } };
+    const placement = flowLabelPlacement(curved, arrowGeometry(curved, [], 2), 2, { width: 40, height: 12 });
+    assert.equal(placement.x, 100);
+  }
 });
 
 test('deleting a node removes its attached flows but preserves unrelated shapes', () => {
