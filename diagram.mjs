@@ -193,8 +193,15 @@ function pinnedPort(node, anchor) {
   }, normal };
 }
 
+export function centerAttachment(node, point, tolerance) {
+  const radius = Math.min(tolerance, node.w / 4, node.h / 4);
+  return Math.hypot(point.x - node.x, point.y - node.y) <= radius ? { node: node.id, auto: true } : null;
+}
+
 export function pinAttachment(node, point, magnet = 0) {
   if (isStateMarker(node)) return { node: node.id };
+  const center = centerAttachment(node, point, magnet);
+  if (center) return center;
   const { rx, ry } = radii(node);
   let anchor;
   if (isEllipse(node)) {
@@ -228,6 +235,45 @@ export function pinAttachment(node, point, magnet = 0) {
   return { node: node.id, anchor };
 }
 
+function closestPort(node, toward) {
+  if (isStateMarker(node) || (node.w === node.h && isEllipse(node))) return port(node, toward);
+  const { rx, ry } = radii(node);
+  const dx = toward.x - node.x;
+  const dy = toward.y - node.y;
+  if (isEllipse(node)) {
+    // In the target quadrant the distance derivative changes sign at most once.
+    let lo = 0;
+    let hi = Math.PI / 2;
+    for (let i = 0; i < 28; i++) {
+      const angle = (lo + hi) / 2;
+      const sin = Math.sin(angle);
+      const cos = Math.cos(angle);
+      if (rx * Math.abs(dx) * sin - ry * Math.abs(dy) * cos + (ry ** 2 - rx ** 2) * sin * cos > 0) hi = angle;
+      else lo = angle;
+    }
+    const angle = Math.atan2(Math.sin((lo + hi) / 2) * (dy < 0 ? -1 : 1),
+      Math.cos((lo + hi) / 2) * (dx < 0 ? -1 : 1));
+    return pinnedPort(node, { angle });
+  }
+  let best;
+  let distance = Infinity;
+  let facing = -Infinity;
+  const sides = node.kind === 'store' ? ['top', 'bottom'] : Object.keys(edgeNormals);
+  for (const side of sides) {
+    const offset = edgeNormals[side].x ? dy / ry : dx / rx;
+    const candidate = pinnedPort(node, { side, offset });
+    const delta = difference(toward, candidate.point);
+    const gap = Math.hypot(delta.x, delta.y);
+    const alignment = dot(candidate.normal, delta);
+    if (gap < distance || (gap === distance && alignment > facing)) {
+      best = candidate;
+      distance = gap;
+      facing = alignment;
+    }
+  }
+  return best;
+}
+
 function basePorts(from, to, flow) {
   const loop = isStateLoop(flow) && from.kind === 'state' ? stateLoop(from.id) : null;
   const fromPin = !isStateMarker(from) && (flow.from.anchor ?? loop?.from.anchor);
@@ -236,6 +282,23 @@ function basePorts(from, to, flow) {
   const bPin = toPin && pinnedPort(to, toPin);
   let a = aPin || port(from, bPin?.point ?? to, flow.from.side);
   let b = bPin || port(to, aPin?.point ?? from, flow.to.side);
+  const autoFrom = !aPin && flow.from.auto;
+  const autoTo = !bPin && flow.to.auto;
+  if (autoFrom || autoTo) {
+    // Reproject both ends when both use auto so they seek each other's outlines.
+    const passes = autoFrom && autoTo ? 12 : 1;
+    const startFirst = !autoTo || (autoFrom && from.id < to.id);
+    for (let i = 0; i < passes; i++) {
+      let nextA = a;
+      if (autoFrom && startFirst) nextA = closestPort(from, b.point);
+      const nextB = autoTo ? closestPort(to, nextA.point) : b;
+      if (autoFrom && !startFirst) nextA = closestPort(from, nextB.point);
+      if (nextA.point.x === a.point.x && nextA.point.y === a.point.y &&
+          nextB.point.x === b.point.x && nextB.point.y === b.point.y) break;
+      [a, b] = [nextA, nextB];
+    }
+    return [a, b];
+  }
   if (!aPin && !bPin) {
     if (from.kind === 'store' && to.kind !== 'store') b = port(to, a.point, flow.to.side);
     if (to.kind === 'store' && from.kind !== 'store') a = port(from, b.point, flow.from.side);

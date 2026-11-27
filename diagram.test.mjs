@@ -296,6 +296,31 @@ test('pinned endpoints use shape-relative positions and snap near the edge midpo
   assert.deepEqual(pinAttachment(right, { x: 198, y: -50 }, 8).anchor, { angle: -Math.PI / 2 });
 });
 
+test('dropping at the center selects the nearest allowed outline and tracks the other endpoint', () => {
+  const from = pinAttachment(left, { x: 3, y: -3 }, 9);
+  assert.deepEqual(from, { node: left.id, auto: true });
+  const start = (node, to) => arrowGeometry({ ...flow, from: { ...from, node: node.id }, to }, [node], 2).start;
+  assert.deepEqual(start(left, { x: 200, y: 18 }), { x: 50, y: 18 });
+  assert.deepEqual(start(left, { x: 17, y: -100 }), { x: 17, y: -25 });
+  assert.deepEqual(start({ ...left, kind: 'store' }, { x: 200, y: 18 }), { x: 50, y: 25 });
+  assert.deepEqual(start({ ...left, kind: 'state' }, { x: 200, y: 24 }), { x: 50, y: 15 });
+
+  const ellipse = { ...left, kind: 'process' };
+  const target = { x: 125, y: 70 };
+  const port = start(ellipse, target);
+  const normal = { x: port.x / 50 ** 2, y: port.y / 25 ** 2 };
+  assert.ok(Math.abs((target.x - port.x) * normal.y - (target.y - port.y) * normal.x) < 1e-7);
+
+  const offsetBox = { ...left, id: 'b', x: 200, y: 20 };
+  const automatic = { ...flow, from, to: { node: offsetBox.id, auto: true } };
+  const pair = arrowGeometry(automatic, [left, offsetBox], 2);
+  assert.equal(pair.start.y, pair.end.y);
+  assert.equal(pair.end.x - pair.start.x, 100);
+  const reversed = arrowGeometry(reverseFlow(automatic, [left, offsetBox]), [left, offsetBox], 2);
+  assert.deepEqual(reversed.start, pair.end);
+  assert.deepEqual(reversed.end, pair.start);
+});
+
 test('attachment magnets use 15-degree intervals and keep straight-edge magnets clear of corners', () => {
   const step = Math.PI / 12;
   const onCircle = degrees => ({ x: right.x + 50 * Math.cos(degrees * Math.PI / 180),

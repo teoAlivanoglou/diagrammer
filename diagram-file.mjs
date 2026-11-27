@@ -25,7 +25,8 @@ export function selectionFile(state, ids) {
 const between = (value, min, max) => Number.isFinite(value) && value >= min && value <= max;
 const isPoint = value => value && between(value.x, -1e7, 1e7) && between(value.y, -1e7, 1e7);
 const isEndpoint = value => typeof value?.node === 'string'
-  ? value.side == null || value.side === 'top' || value.side === 'bottom'
+  ? (value.side == null || value.side === 'top' || value.side === 'bottom') &&
+    (value.auto == null || value.auto === true)
   : isPoint(value);
 const isControl = value => value && (Object.hasOwn(value, 't')
   ? between(value.t, 0, 1) && between(value.offset, -5e7, 5e7) : isPoint(value));

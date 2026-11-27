@@ -1,6 +1,6 @@
 import {
   TYPES, FONTS, GRID_SIZE, sampleDiagram, arrowGeometry, flowLabelPosition, normalizeCurves, reverseFlow,
-  curveControlRegion, pinAttachment, setCurveControl, snapEndpoint, withCurve, removeItems,
+  centerAttachment, curveControlRegion, pinAttachment, setCurveControl, snapEndpoint, withCurve, removeItems,
   alignShapes, distributeShapes, gridPoint, isDiagramShape, itemsInMarquee, marqueeBox, shortcutKey,
   isStateLoop, isStateMarker, isStateShape, stateLoop,
 } from './diagram.mjs';
@@ -269,8 +269,13 @@ function paintCanvas() {
     }));
   } else if (activeTool === 'select' && item?.kind === 'flow') {
     if (drag?.moved && drag.type === 'handle' && drag.handle !== 'control') {
-      const target = item[drag.handle].node;
-      if (target) drawing.querySelector('[data-item="' + CSS.escape(target) + '"]')?.classList.add('snap-target');
+      const endpoint = item[drag.handle];
+      if (endpoint.node) drawing.querySelector('[data-item="' + CSS.escape(endpoint.node) + '"]')?.classList.add('snap-target');
+      const target = endpoint.auto && itemById(endpoint.node);
+      if (target) overlays.append(svg('circle', {
+        cx: target.x, cy: target.y, r: 6 / zoom, fill: 'white', stroke: '#7057e5',
+        'stroke-width': 1.5 / zoom, 'pointer-events': 'none',
+      }));
     }
     const g = arrowGeometry(item, state.items, state.stroke);
     if (g.control) {
@@ -291,7 +296,7 @@ function paintCanvas() {
       overlays.append(svg('g', { 'data-handle': key, 'data-attached': attached },
         svg('title', {}, target && isStateMarker(target)
           ? 'This dot attaches automatically. Drag away to detach.'
-          : 'Drag along a shape to pin this endpoint, or drag away to detach it'),
+          : 'Drop near the center for automatic attachment, or along an edge to pin it'),
         svg('circle', { cx: point.x, cy: point.y, r: 10 / zoom, fill: 'transparent' }),
         svg('circle', {
           cx: point.x, cy: point.y, r: 5 / zoom, fill: attached ? '#7057e5' : 'white',
@@ -363,6 +368,12 @@ function sameEndpoint(a, b) {
 const attachmentFilter = notation => notation === 'sfd' ? isStateShape
   : item => isDiagramShape(item) && !isStateShape(item);
 
+function newArrowEndpoint(point, notation) {
+  const endpoint = snapEndpoint(point, state.items, 0, undefined, attachmentFilter(notation));
+  const node = endpoint.node && itemById(endpoint.node);
+  return node && !isStateMarker(node) ? centerAttachment(node, point, 9 / zoom) ?? endpoint : endpoint;
+}
+
 function completeTransition(flow) {
   if (!isStateLoop(flow)) return flow;
   const defaults = stateLoop(flow.from.node);
@@ -383,7 +394,8 @@ function moveEndpoint(point, flow, handle, snapshot) {
   const original = flow[handle];
   if (original.node === endpoint.node &&
       (endpoint.node
-        ? original.anchor?.side === endpoint.anchor?.side && original.anchor?.offset === endpoint.anchor?.offset &&
+        ? original.auto === endpoint.auto && original.side === endpoint.side &&
+          original.anchor?.side === endpoint.anchor?.side && original.anchor?.offset === endpoint.anchor?.offset &&
           original.anchor?.angle === endpoint.anchor?.angle
         : original.x === endpoint.x && original.y === endpoint.y)) return flow;
   const updated = completeTransition({ ...flow, [handle]: endpoint });
@@ -456,7 +468,7 @@ canvas.addEventListener('pointerdown', event => {
   const handle = event.target.closest('[data-handle]')?.dataset.handle;
   if (activeTool === 'flow' || activeTool === 'transition') {
     const notation = activeTool === 'transition' ? 'sfd' : undefined;
-    const target = snapEndpoint(point, state.items, 0, undefined, attachmentFilter(notation));
+    const target = newArrowEndpoint(point, notation);
     if (!pending) {
       pending = { kind: 'flow', notation, from: target, to: target };
       paint();
@@ -514,7 +526,7 @@ canvas.addEventListener('pointermove', event => {
   const point = location(event);
   if (!drag) {
     if (pending) {
-      const target = snapEndpoint(point, state.items, 0, undefined, attachmentFilter(pending.notation));
+      const target = newArrowEndpoint(point, pending.notation);
       pending = { kind: 'flow', notation: pending.notation, from: pending.from, to: target };
       if (isStateLoop(pending) && itemById(target.node)?.kind === 'state') pending.control = stateLoop(target.node).control;
       paintCanvas();
