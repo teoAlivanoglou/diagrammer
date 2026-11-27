@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { alignShapes, arrowGeometry, curveControlRegion, visibleCurve, distributeShapes, flowLabelPlacement, flowLabelPosition, gridPoint, itemsInMarquee, marqueeBox, pinAttachment, programCoupleGeometry, removeItems, reverseFlow, sampleDiagram, shortcutKey, snapEndpoint, stateLoop, swapTransitionLabelSide, withCurve } from './diagram.mjs';
-import { centerLabelLines, flowLabelWordBoxes, measureLabel, wrapLabel } from './drawing.mjs';
+import { centerLabelLines, flowLabelWordBoxes, measureLabel, programCoupleLabelPlacement, wrapLabel } from './drawing.mjs';
 
 const left = { id: 'a', kind: 'entity', x: 0, y: 0, w: 100, h: 50 };
 const right = { id: 'b', kind: 'process', x: 200, y: 0, w: 100, h: 100 };
@@ -90,6 +90,22 @@ test('PSD calls align a wide parent with the child and keep directed couples par
   const side = programCoupleGeometry(angled, 'return', 'left', 12);
   assert.ok(Math.abs((side.end.x - side.start.x) * (angled.end.y - angled.start.y)
     - (side.end.y - side.start.y) * (angled.end.x - angled.start.x)) < 1e-7);
+});
+
+test('PSD data labels stay aligned with the arrow midpoint as their text grows', () => {
+  const size = { width: 30, height: 16 };
+  const longer = { ...size, width: 160 };
+  const center = { x: 50, y: 80 };
+  for (const sign of [-1, 1]) {
+    const steep = { center, outward: { x: 0.8 * sign, y: 0.6 * sign } };
+    const short = programCoupleLabelPlacement(steep, size);
+    assert.deepEqual(programCoupleLabelPlacement(steep, longer), short);
+    assert.equal(short.y, center.y);
+    assert.equal(short.anchor, sign < 0 ? 'end' : 'start');
+    const shallow = { center, outward: { x: 0.6 * sign, y: 0.8 * sign } };
+    assert.equal(programCoupleLabelPlacement(shallow, longer).x, center.x);
+    assert.equal(programCoupleLabelPlacement(shallow, size).x, center.x);
+  }
 });
 
 test('an SFD self-transition attaches at two distinct points and bends outside the state', () => {

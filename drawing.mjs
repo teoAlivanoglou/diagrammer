@@ -154,6 +154,19 @@ function shape(item, attrs) {
   return svg('path', { d: 'M ' + left + ' ' + top + ' h ' + w + ' M ' + left + ' ' + (top + h) + ' h ' + w, ...attrs });
 }
 
+export function programCoupleLabelPlacement({ center, outward }, { width, height }) {
+  const normalX = Math.abs(outward.x);
+  const normalY = Math.abs(outward.y);
+  const gap = 7;
+  // Keep the label centered on the arrow's dominant screen axis.
+  if (normalX >= normalY) {
+    return { x: center.x + (gap + normalY * height / 2) / outward.x, y: center.y,
+      anchor: outward.x < 0 ? 'end' : 'start' };
+  }
+  return { x: center.x, y: center.y + (gap + normalX * width / 2 + normalY * height / 2) / outward.y,
+    anchor: 'middle' };
+}
+
 function drawProgramCall(group, item, geometry, stroke) {
   group.append(svg('path', { d: geometry.path, ...stroke }));
   if (Math.hypot(geometry.end.x - geometry.start.x, geometry.end.y - geometry.start.y) < 1) return;
@@ -185,10 +198,9 @@ function drawProgramCall(group, item, geometry, stroke) {
     const annotation = { ...item, label: couple.label };
     const metrics = measureLabel(annotation);
     const { width, height } = labelInkSize(metrics, annotation.size);
-    const labelSpace = (Math.abs(outward.x) * width + Math.abs(outward.y) * height) / 2;
-    const gap = 7 + labelSpace;
-    group.append(label(annotation, center.x + outward.x * gap, center.y + outward.y * gap, 'middle', metrics));
-    lanes[side] += 18 + 2 * labelSpace;
+    const placement = programCoupleLabelPlacement({ center, outward }, { width, height });
+    group.append(label(annotation, placement.x, placement.y, placement.anchor, metrics));
+    lanes[side] += 18 + Math.abs(outward.x) * width + Math.abs(outward.y) * height;
   }
 }
 
