@@ -63,26 +63,32 @@ export function centerLabelLines(lines, x, y, leading, anchor) {
   }));
 }
 
-export function measureLabel(item, context) {
+export function measureLabel(item, context, includeWords = false) {
   const font = FONTS[item.font] ?? FONTS.Arial;
   context ??= (textContext ??= globalThis.document?.createElement('canvas').getContext('2d'));
-  if (!context) {
-    return item.label.split('\n').map(text => ({
-      text, left: 0, right: [...text].length * item.size * 0.7, ascent: item.size * 0.8, descent: item.size * 0.2,
-    }));
-  }
-  context.font = item.size + 'px ' + font;
-  const content = isDiagramShape(item)
-    ? wrapLabel(item.label, (item.kind === 'process' ? item.w * 0.8 : item.w) - 14,
-      text => context.measureText(text).width)
-    : item.label.split('\n');
-  return content.map(text => {
+  if (context) context.font = item.size + 'px ' + font;
+  const approximateWidth = text => [...text].length * item.size * 0.7;
+  const advance = text => context ? context.measureText(text).width : approximateWidth(text);
+  const measure = text => {
+    if (!context) return { text, left: 0, right: approximateWidth(text), ascent: item.size * 0.8, descent: item.size * 0.2 };
     const measured = context.measureText(text);
     return {
       text, left: measured.actualBoundingBoxLeft, right: measured.actualBoundingBoxRight,
       ascent: measured.actualBoundingBoxAscent, descent: measured.actualBoundingBoxDescent,
       advance: measured.width, fontAscent: measured.fontBoundingBoxAscent, fontDescent: measured.fontBoundingBoxDescent,
     };
+  };
+  const content = context && isDiagramShape(item)
+    ? wrapLabel(item.label, (item.kind === 'process' ? item.w * 0.8 : item.w) - 14, advance)
+    : item.label.split('\n');
+  return content.map(text => {
+    const line = measure(text);
+    if (includeWords) {
+      line.words = Array.from(text.matchAll(/\S+/gu), match => ({
+        ...measure(match[0]), offset: match.index ? advance(text.slice(0, match.index)) : 0,
+      })).filter(word => word.left + word.right > 0);
+    }
+    return line;
   });
 }
 
@@ -96,20 +102,16 @@ export function flowLabelBox({ x, y, anchor }, { width, height }, padding) {
   return { x: left - padding, y: y - height / 2 - padding, width: width + 2 * padding, height: height + 2 * padding };
 }
 
-export function flowLabelLineBoxes({ x, y, anchor }, metrics, size, stroke) {
+export function flowLabelWordBoxes({ x, y, anchor }, metrics, size, stroke) {
   const lines = centerLabelLines(metrics, x, y, size * 1.22, anchor);
-  const padX = 3 + stroke / 2;
-  const padY = 2 + stroke / 2;
-  const boxes = [];
-  metrics.forEach((ink, index) => {
-    const width = ink.left + ink.right;
-    if (!ink.text.trim() || width <= 0) return;
-    boxes.push({
-      x: lines[index].x - ink.left - padX, y: lines[index].y - ink.ascent - padY,
-      width: width + padX * 2, height: ink.ascent + ink.descent + padY * 2,
-    });
-  });
-  return boxes;
+  const padX = 1.25 + stroke / 2;
+  const padY = 0.75 + stroke / 2;
+  return metrics.flatMap((ink, index) => ink.words.map(word => ({
+    x: lines[index].x + word.offset - word.left - padX,
+    y: lines[index].y - word.ascent - padY,
+    width: word.left + word.right + padX * 2,
+    height: word.ascent + word.descent + padY * 2,
+  })));
 }
 
 export function flowLabelCenter(item, geometry, stroke) {
@@ -162,12 +164,12 @@ export function drawItem(item, state, selected = false, interactive = false, zoo
     let masks;
     let annotation;
     if (item.label) {
-      const metrics = measureLabel(item);
+      const metrics = measureLabel(item, undefined, true);
       const size = labelInkSize(metrics, item.size);
       const placement = flowLabelPlacement(item, g, state.stroke, size);
       const { x, y, anchor } = placement;
       const text = label(item, x, y, anchor, metrics);
-      masks = flowLabelLineBoxes(placement, metrics, item.size, state.stroke);
+      masks = flowLabelWordBoxes(placement, metrics, item.size, state.stroke);
       annotation = interactive && size.width
         ? svg('g', { 'data-flow-label': '' },
           svg('rect', { ...flowLabelBox(placement, size, 4 / zoom), fill: 'transparent' }), text)

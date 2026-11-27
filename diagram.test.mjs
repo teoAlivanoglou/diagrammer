@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { alignShapes, arrowGeometry, visibleCurve, distributeShapes, flowLabelPlacement, flowLabelPosition, gridPoint, itemsInMarquee, marqueeBox, removeItems, reverseFlow, sampleDiagram, shortcutKey, snapEndpoint, withCurve } from './diagram.mjs';
-import { centerLabelLines, flowLabelLineBoxes, wrapLabel } from './drawing.mjs';
+import { centerLabelLines, flowLabelWordBoxes, measureLabel, wrapLabel } from './drawing.mjs';
 import { renderWord } from './word.mjs';
 
 const left = { id: 'a', kind: 'entity', x: 0, y: 0, w: 100, h: 50 };
@@ -121,15 +121,32 @@ test('the transparent label gap preserves quadratic segments outside its bounds'
 });
 
 test('only the long line interrupts an arrow outside the shorter lines', () => {
-  const lines = ['AAA', 'hello, world, how are you', 'foo', 'bar'].map(text => ({
-    text, left: 0, right: text.length * 5, ascent: 9, descent: 2,
-  }));
-  const boxes = flowLabelLineBoxes({ x: 0, y: 0, anchor: 'middle' }, lines, 14, 2);
-  assert.equal(boxes.length, 4);
-  const parts = visibleCurve({ start: { x: 40, y: -50 }, end: { x: 40, y: 50 } }, boxes);
+  const lines = measureLabel({ kind: 'flow', label: 'AAA\nhello, world, how are you\nfoo\nbar', size: 14 }, testFont, true);
+  const boxes = flowLabelWordBoxes({ x: 0, y: 0, anchor: 'middle' }, lines, 14, 2);
+  assert.equal(boxes.length, 8);
+  const parts = visibleCurve({ start: { x: 47, y: -50 }, end: { x: 47, y: 50 } }, boxes);
   assert.equal(parts.length, 2);
   assert.ok(Math.abs(parts[0].end.y - boxes[1].y) < 1e-7);
   assert.ok(Math.abs(parts[1].start.y - boxes[1].y - boxes[1].height) < 1e-7);
+});
+
+const testFont = {
+  measureText(text) {
+    return { width: text.length * 5, actualBoundingBoxLeft: 0, actualBoundingBoxRight: text.length * 5,
+      actualBoundingBoxAscent: 9, actualBoundingBoxDescent: 2 };
+  },
+};
+
+test('word cutouts keep the stroke visible in spaces and between Greek label lines', () => {
+  const lines = measureLabel({ kind: 'flow', label: 'ΜΚΩ,\nστοιχεία αιτούντος', size: 14 }, testFont, true);
+  const boxes = flowLabelWordBoxes({ x: 0, y: 0, anchor: 'middle' }, lines, 14, 2);
+  assert.equal(boxes.length, 3);
+  assert.ok(boxes[0].y + boxes[0].height < boxes[1].y);
+  assert.ok(boxes[1].x + boxes[1].width < boxes[2].x);
+  const segment = { start: { x: -2.5, y: -40 }, end: { x: -2.5, y: 40 } };
+  const parts = visibleCurve(segment, boxes);
+  assert.equal(parts.length, 2);
+  assert.ok(Math.abs(parts[1].start.y - boxes[0].y - boxes[0].height) < 1e-7);
 });
 
 test('curved labels keep their full ink box beyond the outside tangent', () => {

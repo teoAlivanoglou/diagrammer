@@ -1,5 +1,5 @@
 import { arrowGeometry, FONTS, flowLabelPlacement, TYPES, visibleFlow } from './diagram.mjs';
-import { flowLabelLineBoxes, INK, labelInkBounds, labelInkSize, measureLabel } from './drawing.mjs';
+import { flowLabelWordBoxes, INK, labelInkBounds, labelInkSize, measureLabel } from './drawing.mjs';
 
 const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
@@ -117,10 +117,10 @@ function flowDrawing(item, state, metrics) {
   const drawing = [];
   let masks;
   if (item.label) {
-    const lines = measureLabel(item, metrics);
+    const lines = measureLabel(item, metrics, true);
     const size = labelInkSize(lines, item.size);
     const placement = flowLabelPlacement(item, geometry, state.stroke, size);
-    masks = flowLabelLineBoxes(placement, lines, item.size, state.stroke);
+    masks = flowLabelWordBoxes(placement, lines, item.size, state.stroke);
     drawing.push({
       box: labelBox(item, placement, metrics),
       name: 'Data flow label', geometry: preset('rect'), item, textBox: true,
